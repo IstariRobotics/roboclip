@@ -13,6 +13,7 @@
 		4B0E57EB2DDD3000009733A8 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = 4B0E57EA2DDD3000009733A8 /* Realtime */; };
 		4B0E57ED2DDD3000009733A8 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 4B0E57EC2DDD3000009733A8 /* Storage */; };
 		4B0E57EF2DDD3000009733A8 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 4B0E57EE2DDD3000009733A8 /* Supabase */; };
+		4B0E57F82DDD46A8009733A8 /* Atomics in Frameworks */ = {isa = PBXBuildFile; productRef = 4B0E57F72DDD46A8009733A8 /* Atomics */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -80,6 +81,7 @@
 				4B0E57E52DDD3000009733A8 /* Auth in Frameworks */,
 				4B0E57ED2DDD3000009733A8 /* Storage in Frameworks */,
 				4B0E57EB2DDD3000009733A8 /* Realtime in Frameworks */,
+				4B0E57F82DDD46A8009733A8 /* Atomics in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -146,6 +148,7 @@
 				4B0E57EA2DDD3000009733A8 /* Realtime */,
 				4B0E57EC2DDD3000009733A8 /* Storage */,
 				4B0E57EE2DDD3000009733A8 /* Supabase */,
+				4B0E57F72DDD46A8009733A8 /* Atomics */,
 			);
 			productName = roboclip;
 			productReference = 4B0E57492DDD1142009733A8 /* roboclip.app */;
@@ -231,6 +234,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				4B0E57E32DDD3000009733A8 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				4B0E57F62DDD46A8009733A8 /* XCRemoteSwiftPackageReference "swift-atomics" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4B0E574A2DDD1142009733A8 /* Products */;
@@ -642,6 +646,14 @@
 				minimumVersion = 2.5.1;
 			};
 		};
+		4B0E57F62DDD46A8009733A8 /* XCRemoteSwiftPackageReference "swift-atomics" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-atomics.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -674,6 +686,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 4B0E57E32DDD3000009733A8 /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
+		};
+		4B0E57F72DDD46A8009733A8 /* Atomics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4B0E57F62DDD46A8009733A8 /* XCRemoteSwiftPackageReference "swift-atomics" */;
+			productName = Atomics;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

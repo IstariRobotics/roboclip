@@ -19,6 +19,8 @@ struct Recording: Identifiable {
 struct RecordingsListView: View {
     @State private var recordings: [Recording] = []
     @State private var loading = true
+    @State private var showDeleteConfirmation = false
+    @State private var folderToDelete: URL? = nil
     
     var body: some View {
         List {
@@ -26,18 +28,29 @@ struct RecordingsListView: View {
                 Text("(No recordings yet)")
             } else {
                 ForEach(recordings) { rec in
-                    VStack(alignment: .leading) {
-                        Text(rec.id)
-                            .font(.headline)
-                        if let dateStr = rec.meta.date {
-                            Text(dateStr)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(rec.id)
+                                .font(.headline)
+                            if let dateStr = rec.meta.date {
+                                Text(dateStr)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            if let device = rec.meta.device {
+                                Text(device)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
                         }
-                        if let device = rec.meta.device {
-                            Text(device)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            folderToDelete = rec.folderURL
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
                         }
                     }
                 }
@@ -45,6 +58,16 @@ struct RecordingsListView: View {
         }
         .navigationTitle("Recordings")
         .onAppear(perform: loadRecordings)
+        .confirmationDialog(
+            "Are you sure you want to delete this recording? This cannot be undone.",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let folder = folderToDelete { deleteFolder(folder) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
     
     private func loadRecordings() {
@@ -72,5 +95,10 @@ struct RecordingsListView: View {
                 MCP.log("Loaded \(found.count) recordings from temp dir")
             }
         }
+    }
+    
+    private func deleteFolder(_ folder: URL) {
+        try? FileManager.default.removeItem(at: folder)
+        loadRecordings()
     }
 }

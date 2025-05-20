@@ -1,24 +1,56 @@
 import Foundation
 import Supabase
+import Combine
+import Atomics
+
+// Atomic integer wrapper for Swift concurrency compatibility
+final class ManagedAtomicInt {
+    private let atomic = ManagedAtomic<Int>(0)
+    func increment() -> Int {
+        return atomic.wrappingIncrementThenLoad(ordering: .relaxed)
+    }
+}
 
 class SupabaseUploader: ObservableObject {
     @Published var isUploading = false
     @Published var progress: Double = 0.0
     @Published var statusText: String = ""
+    @Published var currentFile: String = ""
+    @Published var estimatedTime: String = ""
     private let supabaseUrl: URL
     private let supabaseKey: String
     private let bucketName = "roboclip-recordings"
-    private let client: SupabaseClient
+    private var client: SupabaseClient
     private var uploadTask: Task<Void, Never>? = nil
     private var isRecording: Bool = false
+    private var cancellables = Set<AnyCancellable>()
+    private var uploadStartTime: Date? = nil
+    
+    @Published var isSignedIn: Bool = false
+    private var accessToken: String? = nil
 
-    init() {
-        // Load secrets from xcconfig via environment or Info.plist (for demo, hardcoded)
+    init(authManager: AuthManager) {
         let urlString = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String ?? "https://rfprjaeyqomuvzempixf.supabase.co"
         let key = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmcHJqYWV5cW9tdXZ6ZW1waXhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc0NzM4NDAsImV4cCI6MjA2MzA0OTg0MH0.ODNn6Sh8MQvTwEkcUPT3tmVhehgTgEU51cWthou8XsM"
         self.supabaseUrl = URL(string: urlString)!
         self.supabaseKey = key
         self.client = SupabaseClient(supabaseURL: supabaseUrl, supabaseKey: supabaseKey)
+        
+        // Observe AuthManager for sign-in state and access token
+        authManager.$isSignedIn
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] signedIn in
+                self?.isSignedIn = signedIn
+            }
+            .store(in: &cancellables)
+        // Remove updateAccessToken (not available in AuthClient)
+        authManager.$supabaseSession
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] session in
+                self?.accessToken = session?.accessToken
+                // No direct way to update token in SupabaseClient; for anon-only, nothing to do
+            }
+            .store(in: &cancellables)
     }
 
     func setIsRecording(_ recording: Bool) {
@@ -28,25 +60,53 @@ class SupabaseUploader: ObservableObject {
         }
     }
 
+    func finishUploadUI() async {
+        await MainActor.run {
+            self.isUploading = false
+            self.progress = 1.0
+            self.statusText = "All uploads complete"
+            self.currentFile = ""
+            self.estimatedTime = ""
+        }
+        // Optionally, add a short delay to let the user see the completed bar
+        try? await Task.sleep(nanoseconds: 700_000_000) // 0.7s
+        await MainActor.run {
+            self.progress = 0.0
+            self.statusText = ""
+        }
+    }
+
     func startUploadProcess() {
         guard !isUploading, !isRecording else { return }
         isUploading = true
         progress = 0.0
         statusText = ""
+        currentFile = ""
+        estimatedTime = ""
+        uploadStartTime = Date()
         uploadTask = Task {
             await uploadAllRecordings()
-            await MainActor.run { self.isUploading = false; self.progress = 0.0; self.statusText = "" }
+            await finishUploadUI()
         }
     }
 
     private func uploadAllRecordings() async {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
+        // Remove empty Scan-* folders before counting pending sessions
         let scanFolders = (try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))?.filter { $0.lastPathComponent.hasPrefix("Scan-") && $0.hasDirectoryPath } ?? []
-        let total = scanFolders.count
-        for (idx, folder) in scanFolders.enumerated() {
+        var pendingFolders: [URL] = []
+        for folder in scanFolders {
+            if let contents = try? fileManager.contentsOfDirectory(atPath: folder.path), contents.isEmpty {
+                try? fileManager.removeItem(at: folder)
+            } else if let contents = try? fileManager.contentsOfDirectory(atPath: folder.path), !contents.isEmpty {
+                pendingFolders.append(folder)
+            }
+        }
+        let total = pendingFolders.count
+        for (idx, folder) in pendingFolders.enumerated() {
             await MainActor.run {
-                self.statusText = "Uploading session \(idx+1)/\(total): \(folder.lastPathComponent)"
+                self.statusText = "Uploading: \(folder.lastPathComponent)"
             }
             await uploadRecordingFolder(folder)
             await MainActor.run { self.progress = Double(idx+1) / Double(max(total,1)) }
@@ -56,23 +116,62 @@ class SupabaseUploader: ObservableObject {
     private func uploadRecordingFolder(_ folder: URL) async {
         let bucket = client.storage.from(bucketName)
         let files = allFiles(in: folder)
-        for file in files {
-            let relPath = file.path.replacingOccurrences(of: folder.deletingLastPathComponent().path + "/", with: "")
-            if await !remoteFileExists(bucket: bucket, path: relPath) {
-                if let data = try? Data(contentsOf: file) {
-                    do {
-                        MCP.log("Uploading file: \(relPath)")
-                        _ = try await bucket.upload(path: relPath, file: data)
-                        MCP.log("Upload succeeded: \(relPath)")
-                    } catch {
-                        MCP.log("Upload failed: \(relPath) error: \(error)")
+        let total = files.count
+        await MainActor.run {
+            self.currentFile = ""
+        }
+        await withTaskGroup(of: Void.self) { group in
+            let completed = ManagedAtomicInt()
+            for file in files {
+                group.addTask {
+                    let relPath = file.path.replacingOccurrences(of: folder.deletingLastPathComponent().path + "/", with: "")
+                    await MainActor.run {
+                        self.currentFile = relPath
                     }
-                } else {
-                    MCP.log("Failed to read file: \(file.path)")
+                    if await !self.remoteFileExists(bucket: bucket, path: relPath) {
+                        if let data = try? Data(contentsOf: file) {
+                            do {
+                                MCP.log("Uploading file: \(relPath)")
+                                _ = try await bucket.upload(relPath, data: data)
+                                MCP.log("Upload succeeded: \(relPath)")
+                                try? FileManager.default.removeItem(at: file)
+                            } catch {
+                                if let storageError = error as? StorageError, storageError.message.contains("already exists") {
+                                    MCP.log("Upload failed (already exists, deleting local): \(relPath)")
+                                    try? FileManager.default.removeItem(at: file)
+                                } else {
+                                    MCP.log("Upload failed: \(relPath) error: \(error)")
+                                }
+                            }
+                        } else {
+                            MCP.log("Failed to read file: \(file.path)")
+                        }
+                    } else {
+                        MCP.log("File already exists remotely (skipped): \(relPath)")
+                        try? FileManager.default.removeItem(at: file)
+                    }
+                    let newCompleted = completed.increment()
+                    await MainActor.run {
+                        let elapsed = Date().timeIntervalSince(self.uploadStartTime ?? Date())
+                        self.progress = Double(newCompleted) / Double(max(total, 1))
+                        if newCompleted > 1 {
+                            let avgTime = elapsed / Double(newCompleted)
+                            let remaining = Double(total - newCompleted) * avgTime
+                            let formatter = DateComponentsFormatter()
+                            formatter.allowedUnits = [.minute, .second]
+                            formatter.unitsStyle = .abbreviated
+                            self.estimatedTime = formatter.string(from: remaining) ?? ""
+                        } else {
+                            self.estimatedTime = ""
+                        }
+                    }
                 }
-            } else {
-                MCP.log("File already exists remotely: \(relPath)")
             }
+            await group.waitForAll()
+        }
+        // If folder is empty after upload, remove it
+        if let contents = try? FileManager.default.contentsOfDirectory(atPath: folder.path), contents.isEmpty {
+            try? FileManager.default.removeItem(at: folder)
         }
     }
 
@@ -89,9 +188,21 @@ class SupabaseUploader: ObservableObject {
     private func remoteFileExists(bucket: StorageFileApi, path: String) async -> Bool {
         do {
             _ = try await bucket.download(path: path)
+            MCP.log("remoteFileExists: \(path) -> true")
             return true
         } catch {
+            MCP.log("remoteFileExists: \(path) -> false (\(error))")
             return false
         }
+    }
+
+    func clearUploadCache() {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory
+        let scanFolders = (try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))?.filter { $0.hasDirectoryPath && $0.lastPathComponent.hasPrefix("Scan-") } ?? []
+        for folder in scanFolders {
+            try? fileManager.removeItem(at: folder)
+        }
+        MCP.log("Cleared all Scan-* folders from temp dir: \(tempDir.path)")
     }
 }
