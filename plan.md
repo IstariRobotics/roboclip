@@ -164,16 +164,18 @@ Request when recording starts; update elapsed seconds every frame; end on stop.
 
 ### Phase 4: UI/UX Implementation
 
-- [ ] Build HomeView with navigation to RecordingView and RecordingsListView
-- [ ] Implement RecordingView with ARPreview, ControlBar, and confirmation dialog
-- [ ] Add reusable UI components (RecordButton, BlinkingIndicator, MetalPreviewLayer)
+- [x] Build HomeView with navigation to RecordingView and RecordingsListView
+- [x] Implement RecordingView with ARPreview, ControlBar, and confirmation dialog
+- [x] Add reusable UI components (RecordButton, BlinkingIndicator, MetalPreviewLayer)
+- [x] Use MCP to debug navigation and UI state
 - [ ] Optional: Add Live Activity for recording status
 - [ ] Use MCP to debug navigation and UI state
 
 ### Phase 5: Data Model & Persistence
 
+- [x] Ensure meta.json includes intrinsics, device, app build info
+- [x] Validate file output and structure with MCP
 - [ ] Implement file structure: /Scan-YYYYMMDD-hhmm/ with video, meta.json, depth, imu.bin
-- [ ] Ensure meta.json includes intrinsics, device, app build info
 - [ ] Validate file output and structure with MCP
 
 ### Phase 6: Testing & Validation

@@ -9,6 +9,8 @@ import UIKit
 import CoreMotion
 
 struct ARPreviewView: UIViewRepresentable {
+    @Binding var isRecording: Bool
+
     class Coordinator: NSObject, ARSessionDelegate {
         let session = ARSession()
         let motionManager = CMMotionManager()
@@ -25,13 +27,17 @@ struct ARPreviewView: UIViewRepresentable {
 
         var recordingManager: RecordingManager? = nil
         var isRecording: Bool = false
+        var cameraIntrinsics: simd_float3x3? = nil
 
         // Queues for threading
         let captureQueue = DispatchQueue(label: "com.roboclip.capture")
         let encodeQueue = DispatchQueue(label: "com.roboclip.encode")
         let motionQueue = OperationQueue()
 
-        override init() {
+        var parent: ARPreviewView
+
+        init(parent: ARPreviewView) {
+            self.parent = parent
             super.init()
             session.delegate = self
             // Monitor thermal state changes
@@ -79,6 +85,7 @@ struct ARPreviewView: UIViewRepresentable {
         }
         
         func startRecording() {
+            MCP.log("Coordinator.startRecording() called")
             recordingManager = RecordingManager()
             recordingManager?.startRecording()
             isRecording = true
@@ -86,9 +93,18 @@ struct ARPreviewView: UIViewRepresentable {
         }
         
         func stopRecording() {
+            recordingManager?.setCameraIntrinsics(cameraIntrinsics!)
             recordingManager?.stopRecording()
             isRecording = false
             MCP.log("Recording stopped.")
+        }
+        
+        func updateRecordingState() {
+            if parent.isRecording && !isRecording {
+                startRecording()
+            } else if !parent.isRecording && isRecording {
+                stopRecording()
+            }
         }
         
         func session(_ session: ARSession, didFailWithError error: Error) {
@@ -124,6 +140,9 @@ struct ARPreviewView: UIViewRepresentable {
                 DispatchQueue.main.async {
                     MCP.log("Frame: t=\(timestamp), \(depthStatus), pose=\(cameraTransform.columns.3)")
                 }
+                if self.cameraIntrinsics == nil {
+                    self.cameraIntrinsics = frame.camera.intrinsics
+                }
                 if self.isRecording {
                     let time = CMTime(seconds: frame.timestamp, preferredTimescale: 600)
                     self.encodeQueue.async {
@@ -138,7 +157,7 @@ struct ARPreviewView: UIViewRepresentable {
     }
     
     func makeCoordinator() -> Coordinator {
-        let coordinator = Coordinator()
+        let coordinator = Coordinator(parent: self)
         coordinator.startSession()
         return coordinator
     }
@@ -150,7 +169,9 @@ struct ARPreviewView: UIViewRepresentable {
         return view
     }
     
-    func updateUIView(_ uiView: ARSCNView, context: Context) {}
+    func updateUIView(_ uiView: ARSCNView, context: Context) {
+        context.coordinator.updateRecordingState()
+    }
 }
 
 // MARK: - MCP Logging

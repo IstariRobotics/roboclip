@@ -25,7 +25,7 @@ struct roboclipApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ARPreviewView() // Show AR preview for bootstrap test
+            HomeView()
         }
         .modelContainer(sharedModelContainer)
     }
