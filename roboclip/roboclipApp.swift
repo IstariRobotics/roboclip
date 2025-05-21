@@ -23,9 +23,20 @@ struct roboclipApp: App {
         }
     }()
 
+    @StateObject private var authManager = AuthManager()
+    @StateObject private var uploader: SupabaseUploader
+
+    init() {
+        let authManager = AuthManager()
+        _authManager = StateObject(wrappedValue: authManager)
+        _uploader = StateObject(wrappedValue: SupabaseUploader(authManager: authManager))
+    }
+
     var body: some Scene {
         WindowGroup {
             HomeView()
+                .environmentObject(uploader)
+                .environmentObject(authManager)
         }
         .modelContainer(sharedModelContainer)
     }

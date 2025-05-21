@@ -197,12 +197,17 @@ class SupabaseUploader: ObservableObject {
     }
 
     func clearUploadCache() {
-        let fileManager = FileManager.default
-        let tempDir = fileManager.temporaryDirectory
-        let scanFolders = (try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))?.filter { $0.hasDirectoryPath && $0.lastPathComponent.hasPrefix("Scan-") } ?? []
-        for folder in scanFolders {
-            try? fileManager.removeItem(at: folder)
+        Task {
+            let fileManager = FileManager.default
+            let tempDir = fileManager.temporaryDirectory
+            let scanFolders = (try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))?.filter { $0.hasDirectoryPath && $0.lastPathComponent.hasPrefix("Scan-") } ?? []
+            for folder in scanFolders {
+                try? fileManager.removeItem(at: folder)
+            }
+            await MainActor.run {
+                MCP.log("Cleared all Scan-* folders from temp dir: \(tempDir.path)")
+                // Optionally update UI state here if needed
+            }
         }
-        MCP.log("Cleared all Scan-* folders from temp dir: \(tempDir.path)")
     }
 }
