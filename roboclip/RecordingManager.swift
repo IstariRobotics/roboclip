@@ -18,6 +18,7 @@ class RecordingManager {
     private var isRecording = false
     private var pixelBufferPool: CVPixelBufferPool?
     private var cameraIntrinsics: simd_float3x3?
+    private var recordingStartTime: CMTime?
 
     func setCameraIntrinsics(_ m: simd_float3x3) { cameraIntrinsics = m }
     
@@ -29,6 +30,7 @@ class RecordingManager {
         let dir = fileManager.temporaryDirectory.appendingPathComponent("Scan-\(timestamp)")
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         outputDirectory = dir
+        recordingStartTime = nil
         // Video
         let videoURL = dir.appendingPathComponent("video.mov")
         assetWriter = try? AVAssetWriter(url: videoURL, fileType: .mov)
@@ -62,71 +64,102 @@ class RecordingManager {
         MCP.log("RecordingManager: Created scan directory at \(dir.path)")
     }
     
-    func stopRecording() {
+    func stopRecording(completion: (() -> Void)? = nil) {
         isRecording = false
+        recordingStartTime = nil
         videoInput?.markAsFinished()
-        assetWriter?.finishWriting {}
-        depthFileHandle?.closeFile()
-        imuFileHandle?.closeFile()
-        // Write meta.json
-        if let dir = outputDirectory {
-            let metaURL = dir.appendingPathComponent("meta.json")
-            var meta: [String: Any] = [
-                "date": ISO8601DateFormatter().string(from: Date()),
-                "device": UIDevice.current.model,
-                "systemVersion": UIDevice.current.systemVersion,
-                "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
-                "build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
-            ]
-            if let intrinsics = cameraIntrinsics {
-                meta["cameraIntrinsics"] = [
-                    [intrinsics.columns.0.x, intrinsics.columns.0.y, intrinsics.columns.0.z],
-                    [intrinsics.columns.1.x, intrinsics.columns.1.y, intrinsics.columns.1.z],
-                    [intrinsics.columns.2.x, intrinsics.columns.2.y, intrinsics.columns.2.z]
+        assetWriter?.finishWriting { [weak self] in
+            self?.depthFileHandle?.closeFile()
+            self?.imuFileHandle?.closeFile()
+            // Write meta.json
+            if let dir = self?.outputDirectory {
+                let metaURL = dir.appendingPathComponent("meta.json")
+                var meta: [String: Any] = [
+                    "date": ISO8601DateFormatter().string(from: Date()),
+                    "device": UIDevice.current.model,
+                    "systemVersion": UIDevice.current.systemVersion,
+                    "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+                    "build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
                 ]
+                if let intrinsics = self?.cameraIntrinsics {
+                    meta["cameraIntrinsics"] = [
+                        [intrinsics.columns.0.x, intrinsics.columns.0.y, intrinsics.columns.0.z],
+                        [intrinsics.columns.1.x, intrinsics.columns.1.y, intrinsics.columns.1.z],
+                        [intrinsics.columns.2.x, intrinsics.columns.2.y, intrinsics.columns.2.z]
+                    ]
+                }
+                if let data = try? JSONSerialization.data(withJSONObject: meta, options: .prettyPrinted) {
+                    try? data.write(to: metaURL)
+                    MCP.log("RecordingManager: Wrote meta.json to \(metaURL.path)")
+                }
+                // MCP validation: check all files exist
+                let videoExists = FileManager.default.fileExists(atPath: dir.appendingPathComponent("video.mov").path)
+                let imuExists = FileManager.default.fileExists(atPath: dir.appendingPathComponent("imu.bin").path)
+                let depthDir = dir.appendingPathComponent("depth")
+                let depthFiles = (try? FileManager.default.contentsOfDirectory(atPath: depthDir.path)) ?? []
+                let metaExists = FileManager.default.fileExists(atPath: metaURL.path)
+                MCP.log("Validation: video.mov=\(videoExists), imu.bin=\(imuExists), depth/ count=\(depthFiles.count), meta.json=\(metaExists)")
             }
-            if let data = try? JSONSerialization.data(withJSONObject: meta, options: .prettyPrinted) {
-                try? data.write(to: metaURL)
-                MCP.log("RecordingManager: Wrote meta.json to \(metaURL.path)")
-            }
-            // MCP validation: check all files exist
-            let videoExists = FileManager.default.fileExists(atPath: dir.appendingPathComponent("video.mov").path)
-            let imuExists = FileManager.default.fileExists(atPath: dir.appendingPathComponent("imu.bin").path)
-            let depthDir = dir.appendingPathComponent("depth")
-            let depthFiles = (try? FileManager.default.contentsOfDirectory(atPath: depthDir.path)) ?? []
-            let metaExists = FileManager.default.fileExists(atPath: metaURL.path)
-            MCP.log("Validation: video.mov=\(videoExists), imu.bin=\(imuExists), depth/ count=\(depthFiles.count), meta.json=\(metaExists)")
+            completion?()
         }
     }
     
     func appendVideoFrame(_ pixelBuffer: CVPixelBuffer, at time: CMTime) {
         guard isRecording, let input = videoInput, let adaptor = pixelBufferAdaptor, input.isReadyForMoreMediaData else { return }
-        // Use the pool to get a reusable buffer
-        var reusableBuffer: CVPixelBuffer?
-        if let pool = pixelBufferPool {
-            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &reusableBuffer)
+        // Set recordingStartTime if this is the first frame
+        if recordingStartTime == nil {
+            recordingStartTime = time
         }
-        if let reusableBuffer = reusableBuffer {
-            CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-            CVPixelBufferLockBaseAddress(reusableBuffer, [])
-            let srcBase = CVPixelBufferGetBaseAddress(pixelBuffer)
-            let dstBase = CVPixelBufferGetBaseAddress(reusableBuffer)
-            let height = min(CVPixelBufferGetHeight(pixelBuffer), CVPixelBufferGetHeight(reusableBuffer))
-            let bytesPerRow = min(CVPixelBufferGetBytesPerRow(pixelBuffer), CVPixelBufferGetBytesPerRow(reusableBuffer))
-            if let srcBase = srcBase, let dstBase = dstBase, height > 0, bytesPerRow > 0 {
-                memcpy(dstBase, srcBase, height * bytesPerRow)
+        guard let start = recordingStartTime else { return }
+        let relativeTime = CMTimeSubtract(time, start)
+        // If the buffer is already compatible, append directly
+        if let pool = pixelBufferPool {
+            var reusableBuffer: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &reusableBuffer)
+            if let reusableBuffer = reusableBuffer {
+                CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+                CVPixelBufferLockBaseAddress(reusableBuffer, [])
+                let srcPlaneCount = CVPixelBufferGetPlaneCount(pixelBuffer)
+                let dstPlaneCount = CVPixelBufferGetPlaneCount(reusableBuffer)
+                if srcPlaneCount == dstPlaneCount && srcPlaneCount > 0 {
+                    // Multi-plane (e.g., NV12)
+                    for plane in 0..<srcPlaneCount {
+                        let srcBase = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, plane)
+                        let dstBase = CVPixelBufferGetBaseAddressOfPlane(reusableBuffer, plane)
+                        let height = min(CVPixelBufferGetHeightOfPlane(pixelBuffer, plane), CVPixelBufferGetHeightOfPlane(reusableBuffer, plane))
+                        let bytesPerRow = min(CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, plane), CVPixelBufferGetBytesPerRowOfPlane(reusableBuffer, plane))
+                        if let srcBase = srcBase, let dstBase = dstBase, height > 0, bytesPerRow > 0 {
+                            for row in 0..<height {
+                                let srcPtr = srcBase.advanced(by: row * CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, plane))
+                                let dstPtr = dstBase.advanced(by: row * CVPixelBufferGetBytesPerRowOfPlane(reusableBuffer, plane))
+                                memcpy(dstPtr, srcPtr, bytesPerRow)
+                            }
+                        }
+                    }
+                } else if srcPlaneCount == 0 && dstPlaneCount == 0 {
+                    // Single-plane (e.g., RGB, Grayscale)
+                    if let srcBase = CVPixelBufferGetBaseAddress(pixelBuffer), let dstBase = CVPixelBufferGetBaseAddress(reusableBuffer) {
+                        let height = min(CVPixelBufferGetHeight(pixelBuffer), CVPixelBufferGetHeight(reusableBuffer))
+                        let bytesPerRow = min(CVPixelBufferGetBytesPerRow(pixelBuffer), CVPixelBufferGetBytesPerRow(reusableBuffer))
+                        memcpy(dstBase, srcBase, height * bytesPerRow)
+                    }
+                } else {
+                    MCP.log("appendVideoFrame: plane count mismatch or unsupported format, falling back to original buffer")
+                    adaptor.append(pixelBuffer, withPresentationTime: relativeTime)
+                    CVPixelBufferUnlockBaseAddress(reusableBuffer, [])
+                    CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
+                    return
+                }
                 CVPixelBufferUnlockBaseAddress(reusableBuffer, [])
                 CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-                adaptor.append(reusableBuffer, withPresentationTime: time)
+                adaptor.append(reusableBuffer, withPresentationTime: relativeTime)
             } else {
-                CVPixelBufferUnlockBaseAddress(reusableBuffer, [])
-                CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-                MCP.log("appendVideoFrame: nil base address or invalid size, falling back to original buffer")
-                adaptor.append(pixelBuffer, withPresentationTime: time)
+                // Fallback: use the original buffer
+                adaptor.append(pixelBuffer, withPresentationTime: relativeTime)
             }
         } else {
-            // Fallback: use the original buffer
-            adaptor.append(pixelBuffer, withPresentationTime: time)
+            // No pool, just append
+            adaptor.append(pixelBuffer, withPresentationTime: relativeTime)
         }
     }
     

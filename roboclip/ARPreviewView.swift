@@ -85,24 +85,6 @@ struct ARPreviewView: UIViewRepresentable {
         }
         
         func startRecording() {
-            #if targetEnvironment(simulator)
-            // Simulator never has LiDAR
-            MCP.log("LiDAR not available on simulator. Recording not started.")
-            return
-            #else
-            guard ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) else {
-                MCP.log("LiDAR not available on this device. Recording not started.")
-                DispatchQueue.main.async {
-                    let alert = UIAlertController(title: "LiDAR Not Available", message: "This device does not support LiDAR. Recording is not possible.", preferredStyle: .alert)
-                    alert.addAction(UIAlertAction(title: "OK", style: .default))
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let rootVC = windowScene.windows.first?.rootViewController {
-                        rootVC.present(alert, animated: true)
-                    }
-                }
-                return
-            }
-            #endif
             MCP.log("Coordinator.startRecording() called")
             recordingManager = RecordingManager()
             recordingManager?.startRecording()
