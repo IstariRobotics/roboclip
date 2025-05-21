@@ -188,6 +188,50 @@ class RecordingManager {
         }
     }
     
+    private func saveDepthData(_ depthMap: CVPixelBuffer, timestamp: TimeInterval, frameIndex: Int) {
+        let depthFilename = String(format: "depth_%05d_%f.d16", frameIndex, timestamp)
+        let depthFileURL = outputDirectory?.appendingPathComponent("depth").appendingPathComponent(depthFilename)
+
+        guard let fileURL = depthFileURL else {
+            print("Error: Depth file URL is nil.")
+            return
+        }
+
+        CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
+
+        guard let baseAddress = CVPixelBufferGetBaseAddress(depthMap) else {
+            print("Error: Could not get base address of depth map.")
+            return
+        }
+
+        let width = CVPixelBufferGetWidth(depthMap)
+        let height = CVPixelBufferGetHeight(depthMap)
+        
+        // Ensure we are saving raw Float32 data, tightly packed.
+        // ARKit kCVPixelFormatType_DepthFloat32 is typically Float32 in meters.
+        // The data size should be width * height * size_of_float.
+        let expectedPixelFormat = kCVPixelFormatType_DepthFloat32
+        let actualPixelFormat = CVPixelBufferGetPixelFormatType(depthMap)
+
+        if actualPixelFormat != expectedPixelFormat {
+            print("Warning: Depth map pixel format is \(actualPixelFormat) (expected \(expectedPixelFormat)). Data might not be Float32 meters.")
+            // Consider converting or handling this case if other formats are possible.
+        }
+
+        // Calculate the size of the data assuming it's tightly packed Float32.
+        let dataSize = width * height * MemoryLayout<Float32>.stride 
+
+        let data = Data(bytes: baseAddress, count: dataSize)
+
+        do {
+            try data.write(to: fileURL)
+            // print("Saved depth frame: \(depthFilename)")
+        } catch {
+            print("Error writing depth data to \(fileURL): \(error)")
+        }
+    }
+
     // Helper for scan folder naming
     private static let scanFolderDateFormatter: DateFormatter = {
         let df = DateFormatter()

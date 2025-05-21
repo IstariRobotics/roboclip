@@ -31,3 +31,4 @@ DerivedData/
 
 # Node modules (if any)
 node_modules/
+robo-rewind/supabase_bucket_permissions.sql
