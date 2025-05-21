@@ -1,2 +1,33 @@
-# Ignore Supabase secrets
-roboclip/SupabaseSecrets.xcconfi
+# Ignore macOS system files
+.DS_Store
+
+# Python virtual environments
+venv-py311/
+robo-rewind/venv/
+
+# Data and large files
+data/
+robo-rewind/downloads/
+
+# Supabase secrets and sensitive config
+roboclip/roboclip/SupabaseSecrets.xcconfig
+
+# Xcode user data and build products
+roboclip/roboclip.xcodeproj/xcuserdata/
+roboclip/roboclip.xcodeproj/project.xcworkspace/xcuserdata/
+roboclip/roboclip.xcodeproj/xcshareddata/WorkspaceSettings.xcsettings
+roboclip/roboclip.xcodeproj/xcshareddata/WorkspaceSettings.xcsettings
+roboclip/roboclip.xcodeproj/xcshareddata/swiftpm/
+
+# SwiftPM build artifacts
+roboclip/.build/
+
+# Derived data
+DerivedData/
+
+# Other IDE files
+.idea/
+.vscode/
+
+# Node modules (if any)
+node_modules/
