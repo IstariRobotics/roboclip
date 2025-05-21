@@ -11,20 +11,13 @@ struct HomeView: View {
         NavigationStack(path: $navPath) {
             ScrollView {
                 VStack(spacing: 24) {
-                    // 1️⃣ Primary feature buttons --------------------------------------------------
-                    LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 16) {
-                        FeatureButton(title: "Record",
-                                      systemImage: "record.circle.fill",
-                                      tint: .red) {
-                            navPath.append(Destination.record)
-                        }
-                        FeatureButton(title: "Recordings",
-                                      systemImage: "folder.fill",
-                                      tint: .accentColor) {
-                            navPath.append(Destination.list)
-                        }
+                    // 1️⃣ Primary feature button (Record only)
+                    FeatureButton(title: "Record",
+                                  systemImage: "record.circle.fill",
+                                  tint: .red) {
+                        navPath.append(Destination.record)
                     }
-                    // 2️⃣ Upload status bar -------------------------------------------------------
+                    // 2️⃣ Upload status bar
                     if uploader.isUploading {
                         UploadStatusBar(progress: uploader.progress,
                                         text: uploader.statusText)
@@ -38,7 +31,6 @@ struct HomeView: View {
                     SettingsLink()
                 }
             }
-            // 3️⃣ Lifecycle & recording state -----------------------------------------------
             .task {
                 MCP.log("HomeView appeared")
                 uploader.setIsRecording(isRecording)
@@ -48,19 +40,26 @@ struct HomeView: View {
                 uploader.setIsRecording(value)
                 if !value { uploader.startUploadProcess() }
             }
-            // 4️⃣ Navigation destinations ----------------------------------------------------
+            // Only keep .record navigation
             .navigationDestination(for: Destination.self) { dest in
                 switch dest {
                 case .record:
                     RecordingView(isRecording: $isRecording)
-                case .list:
-                    RecordingsListView()
                 }
             }
         }
     }
 
-    private enum Destination: Hashable { case record, list }
+    private enum Destination: Hashable { case record }
+}
+
+// Add this helper at file scope (outside HomeView struct):
+private func getScanFolderDateFormatter() -> DateFormatter {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss-SSS"
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone.current
+    return formatter
 }
 
 // MARK: - Reusable components -----------------------------------------------------------

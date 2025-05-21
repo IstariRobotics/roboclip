@@ -28,6 +28,7 @@ struct ARPreviewView: UIViewRepresentable {
         var recordingManager: RecordingManager? = nil
         var isRecording: Bool = false
         var cameraIntrinsics: simd_float3x3? = nil
+        var imageResolution: CGSize? = nil // Store image resolution
 
         // Queues for threading
         let captureQueue = DispatchQueue(label: "com.roboclip.capture")
@@ -95,24 +96,29 @@ struct ARPreviewView: UIViewRepresentable {
             MCP.log("ARKit session started with sceneDepth and high-res video.")
         }
         
-        func startRecording() {
+        func startRecording(device: MTLDevice) { // Add MTLDevice parameter
             MCP.log("Coordinator.startRecording() called")
             recordingManager = RecordingManager()
-            recordingManager?.startRecording()
+            // Pass device and session to RecordingManager's startRecording
+            recordingManager?.startRecording(device: device, arSession: self.session)
             isRecording = true
             MCP.log("Recording started.")
         }
         
         func stopRecording() {
-            recordingManager?.setCameraIntrinsics(cameraIntrinsics!)
+            if let intrinsics = cameraIntrinsics, let resolution = imageResolution {
+                recordingManager?.setCameraIntrinsics(intrinsics, imageResolution: resolution)
+            } else {
+                MCP.log("Error: Camera intrinsics or image resolution not available for meta.json")
+            }
             recordingManager?.stopRecording()
             isRecording = false
             MCP.log("Recording stopped.")
         }
         
-        func updateRecordingState() {
+        func updateRecordingState(device: MTLDevice) { // Add MTLDevice parameter
             if parent.isRecording && !isRecording {
-                startRecording()
+                startRecording(device: device) // Pass device
             } else if !parent.isRecording && isRecording {
                 stopRecording()
             }
@@ -153,13 +159,18 @@ struct ARPreviewView: UIViewRepresentable {
                 }
                 if self.cameraIntrinsics == nil {
                     self.cameraIntrinsics = frame.camera.intrinsics
+                    // Capture image resolution when intrinsics are first captured
+                    let capturedImagePixelBuffer = frame.capturedImage
+                    self.imageResolution = CGSize(width: CVPixelBufferGetWidth(capturedImagePixelBuffer), height: CVPixelBufferGetHeight(capturedImagePixelBuffer))
+                    MCP.log("Captured camera intrinsics and image resolution: \(self.imageResolution!)")
                 }
                 if self.isRecording {
                     let time = CMTime(seconds: frame.timestamp, preferredTimescale: 600)
                     self.encodeQueue.async {
                         self.recordingManager?.appendVideoFrame(frame.capturedImage, at: time)
                         if let depth = frame.sceneDepth {
-                            self.recordingManager?.appendDepthData(depth)
+                            // Use depth.depthMap for CVPixelBuffer and add timestamp
+                            self.recordingManager?.appendDepthData(depthData: depth.depthMap, timestamp: frame.timestamp)
                         }
                     }
                 }
@@ -181,9 +192,13 @@ struct ARPreviewView: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: ARSCNView, context: Context) {
-        context.coordinator.updateRecordingState()
+        guard let device = uiView.device else {
+            MCP.log("Error: MTLDevice not available in ARSCNView. Cannot update recording state.")
+            return
+        }
+        context.coordinator.updateRecordingState(device: device) // Pass unwrapped device
     }
-}
+} 
 
 // MARK: - MCP Logging
 final class MCP {
