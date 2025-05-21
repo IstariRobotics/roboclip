@@ -48,18 +48,29 @@ struct ARPreviewView: UIViewRepresentable {
             
             // Start IMU updates on motionQueue (OperationQueue)
             if motionManager.isDeviceMotionAvailable {
-                motionManager.deviceMotionUpdateInterval = 1.0 / 60.0
+                motionManager.deviceMotionUpdateInterval = 1.0 / 60.0 // Recommended for AR
                 motionManager.startDeviceMotionUpdates(to: motionQueue) { [weak self] motion, error in
                     guard let self = self, let motion = motion else { return }
+                    
                     let entry = (timestamp: motion.timestamp, attitude: motion.attitude, rotationRate: motion.rotationRate, userAcceleration: motion.userAcceleration, gravity: motion.gravity)
+                    
+                    // Safely append to imuData - this array is only modified on this motionQueue
                     self.imuData.append(entry)
-                    if self.imuData.count > 300 { self.imuData.removeFirst() }
-                    if self.isRecording {
-                        self.recordingManager?.appendIMUData(entry)
+                    // Keep imuData buffer from growing indefinitely
+                    if self.imuData.count > 300 { // Approx 5 seconds of data at 60Hz
+                        self.imuData.removeFirst()
                     }
-                    DispatchQueue.main.async {
-                        MCP.log("IMU: t=\(motion.timestamp), roll=\(motion.attitude.roll), pitch=\(motion.attitude.pitch), yaw=\(motion.attitude.yaw)")
+                    
+                    // Access recordingManager and isRecording state carefully
+                    // Check isRecording flag first, then safely unwrap recordingManager
+                    if self.isRecording, let manager = self.recordingManager {
+                        manager.appendIMUData(entry)
                     }
+                    
+                    // Logging (consider reducing frequency or removing for release)
+                    // DispatchQueue.main.async {
+                    //     MCP.log("IMU: t=\(motion.timestamp), roll=\(motion.attitude.roll), pitch=\(motion.attitude.pitch), yaw=\(motion.attitude.yaw)")
+                    // }
                 }
             } else {
                 MCP.log("IMU not available on this device.")

@@ -68,39 +68,68 @@ class RecordingManager {
         isRecording = false
         recordingStartTime = nil
         videoInput?.markAsFinished()
-        assetWriter?.finishWriting { [weak self] in
-            self?.depthFileHandle?.closeFile()
-            self?.imuFileHandle?.closeFile()
-            // Write meta.json
-            if let dir = self?.outputDirectory {
-                let metaURL = dir.appendingPathComponent("meta.json")
-                var meta: [String: Any] = [
-                    "date": ISO8601DateFormatter().string(from: Date()),
-                    "device": UIDevice.current.model,
-                    "systemVersion": UIDevice.current.systemVersion,
-                    "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
-                    "build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+        
+        // Close file handles first
+        depthFileHandle?.closeFile()
+        imuFileHandle?.closeFile()
+        MCP.log("RecordingManager: Closed depth and IMU file handles.")
+
+        // Write meta.json immediately
+        var metaWritten = false
+        if let dir = self.outputDirectory {
+            let metaURL = dir.appendingPathComponent("meta.json")
+            var meta: [String: Any] = [
+                "date": ISO8601DateFormatter().string(from: Date()),
+                "device": UIDevice.current.model,
+                "systemVersion": UIDevice.current.systemVersion,
+                "appVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+                "build": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+            ]
+            if let intrinsics = self.cameraIntrinsics {
+                meta["cameraIntrinsics"] = [ // Storing as array of arrays (rows)
+                    [intrinsics.columns.0.x, intrinsics.columns.1.x, intrinsics.columns.2.x], // Row 1
+                    [intrinsics.columns.0.y, intrinsics.columns.1.y, intrinsics.columns.2.y], // Row 2
+                    [intrinsics.columns.0.z, intrinsics.columns.1.z, intrinsics.columns.2.z]  // Row 3
                 ]
-                if let intrinsics = self?.cameraIntrinsics {
-                    meta["cameraIntrinsics"] = [
-                        [intrinsics.columns.0.x, intrinsics.columns.0.y, intrinsics.columns.0.z],
-                        [intrinsics.columns.1.x, intrinsics.columns.1.y, intrinsics.columns.1.z],
-                        [intrinsics.columns.2.x, intrinsics.columns.2.y, intrinsics.columns.2.z]
-                    ]
-                }
-                if let data = try? JSONSerialization.data(withJSONObject: meta, options: .prettyPrinted) {
-                    try? data.write(to: metaURL)
+                 // Also store fx, fy, cx, cy directly for easier access by Python script
+                meta["intrinsics"] = [
+                    "fx": intrinsics.columns.0.x,
+                    "fy": intrinsics.columns.1.y,
+                    "cx": intrinsics.columns.2.x,
+                    "cy": intrinsics.columns.2.y
+                ]
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: meta, options: .prettyPrinted) {
+                do {
+                    try data.write(to: metaURL)
                     MCP.log("RecordingManager: Wrote meta.json to \(metaURL.path)")
+                    metaWritten = true
+                } catch {
+                    MCP.log("RecordingManager: ERROR writing meta.json: \(error)")
                 }
-                // MCP validation: check all files exist
+            }
+        } else {
+            MCP.log("RecordingManager: ERROR - outputDirectory is nil, cannot write meta.json.")
+        }
+
+        assetWriter?.finishWriting { [weak self] in
+            MCP.log("RecordingManager: AVAssetWriter finished writing.")
+            // MCP validation: check all files exist
+            if let dir = self?.outputDirectory {
                 let videoExists = FileManager.default.fileExists(atPath: dir.appendingPathComponent("video.mov").path)
                 let imuExists = FileManager.default.fileExists(atPath: dir.appendingPathComponent("imu.bin").path)
                 let depthDir = dir.appendingPathComponent("depth")
                 let depthFiles = (try? FileManager.default.contentsOfDirectory(atPath: depthDir.path)) ?? []
-                let metaExists = FileManager.default.fileExists(atPath: metaURL.path)
+                let metaExists = FileManager.default.fileExists(atPath: dir.appendingPathComponent("meta.json").path)
                 MCP.log("Validation: video.mov=\(videoExists), imu.bin=\(imuExists), depth/ count=\(depthFiles.count), meta.json=\(metaExists)")
+                
+                if videoExists && imuExists && metaExists { // Assuming depth can be empty but dir exists
+                     MCP.log("All essential files present. Calling completion for upload.")
+                } else {
+                    MCP.log("WARNING: Not all essential files present. Upload might be incomplete.")
+                }
             }
-            completion?()
+            completion?() // Call completion after everything, including meta.json attempt
         }
     }
     
