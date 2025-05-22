@@ -188,7 +188,7 @@ class SupabaseUploader: ObservableObject {
         // Limit concurrency using TaskGroup and chunking
         let chunkSize = maxConcurrentUploads
         let fileChunks = stride(from: 0, to: files.count, by: chunkSize).map { Array(files[$0..<min($0+chunkSize, files.count)]) }
-        var completed = 0
+        let completed = ManagedAtomicInt()
         for chunk in fileChunks {
             await withTaskGroup(of: Void.self) { group in
                 for file in chunk {
@@ -300,23 +300,36 @@ class SupabaseUploader: ObservableObject {
         return false
     }
 
+    // Actor for concurrency-safe removedCount
+    actor RemovedCount {
+        private var value: Int = 0
+        func increment() { value += 1 }
+        func get() -> Int { value }
+    }
+
     func clearUploadCache() {
         Task {
             let fileManager = FileManager.default
             let tempDir = fileManager.temporaryDirectory
             let scanFolders = (try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))?.filter { $0.hasDirectoryPath && $0.lastPathComponent.hasPrefix("Scan-") } ?? []
-            var removedCount = 0
-            for folder in scanFolders {
-                do {
-                    try fileManager.removeItem(at: folder)
-                    removedCount += 1
-                } catch {
-                    MCP.log("Failed to remove folder: \(folder.path) error: \(error)")
+            let removedCount = RemovedCount()
+            await withTaskGroup(of: Void.self) { group in
+                for folder in scanFolders {
+                    group.addTask {
+                        do {
+                            try fileManager.removeItem(at: folder)
+                            await removedCount.increment()
+                        } catch {
+                            MCP.log("Failed to remove folder: \(folder.path) error: \(error)")
+                        }
+                    }
                 }
+                await group.waitForAll()
             }
+            let count = await removedCount.get()
             await MainActor.run {
-                MCP.log("Cleared all Scan-* folders from temp dir: \(tempDir.path), removed \(removedCount) folders.")
-                self.statusText = removedCount > 0 ? "Upload cache cleared (\(removedCount) folders removed)" : "No upload cache to clear."
+                MCP.log("Cleared all Scan-* folders from temp dir: \(tempDir.path), removed \(count) folders.")
+                self.statusText = count > 0 ? "Upload cache cleared (\(count) folders removed)" : "No upload cache to clear."
                 self.sessionStatuses.removeAll()
                 self.progress = 0.0
                 self.currentFile = ""
