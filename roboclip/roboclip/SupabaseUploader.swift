@@ -11,12 +11,21 @@ final class ManagedAtomicInt {
     }
 }
 
+/// Tracks progress for an individual session upload
+struct SessionStatus: Identifiable {
+    let id = UUID()
+    let folderName: String
+    var progress: Double
+}
+
 class SupabaseUploader: ObservableObject {
     @Published var isUploading = false
     @Published var progress: Double = 0.0
     @Published var statusText: String = ""
     @Published var currentFile: String = ""
     @Published var estimatedTime: String = ""
+    /// Progress for each session being uploaded
+    @Published var sessionStatuses: [SessionStatus] = []
     private let supabaseUrl: URL
     private let supabaseKey: String
     private let bucketName = "roboclip-recordings"
@@ -67,6 +76,7 @@ class SupabaseUploader: ObservableObject {
             self.statusText = "All uploads complete"
             self.currentFile = ""
             self.estimatedTime = ""
+            self.sessionStatuses.removeAll()
         }
         // Optionally, add a short delay to let the user see the completed bar
         try? await Task.sleep(nanoseconds: 700_000_000) // 0.7s
@@ -104,16 +114,19 @@ class SupabaseUploader: ObservableObject {
             }
         }
         let total = pendingFolders.count
+        await MainActor.run {
+            self.sessionStatuses = pendingFolders.map { SessionStatus(folderName: $0.lastPathComponent, progress: 0.0) }
+        }
         for (idx, folder) in pendingFolders.enumerated() {
             await MainActor.run {
                 self.statusText = "Uploading: \(folder.lastPathComponent)"
             }
-            await uploadRecordingFolder(folder)
+            await uploadRecordingFolder(folder, index: idx)
             await MainActor.run { self.progress = Double(idx+1) / Double(max(total,1)) }
         }
     }
 
-    private func uploadRecordingFolder(_ folder: URL) async {
+    private func uploadRecordingFolder(_ folder: URL, index: Int) async {
         let bucket = client.storage.from(bucketName)
         let files = allFiles(in: folder)
         let total = files.count
@@ -146,6 +159,9 @@ class SupabaseUploader: ObservableObject {
                     await MainActor.run {
                         let elapsed = Date().timeIntervalSince(self.uploadStartTime ?? Date())
                         self.progress = Double(newCompleted) / Double(max(total, 1))
+                        if index < self.sessionStatuses.count {
+                            self.sessionStatuses[index].progress = self.progress
+                        }
                         if newCompleted > 1 {
                             let avgTime = elapsed / Double(newCompleted)
                             let remaining = Double(total - newCompleted) * avgTime
@@ -160,6 +176,11 @@ class SupabaseUploader: ObservableObject {
                 }
             }
             await group.waitForAll()
+        }
+        await MainActor.run {
+            if index < self.sessionStatuses.count {
+                self.sessionStatuses[index].progress = 1.0
+            }
         }
         // If folder is empty after upload, remove it
         if let contents = try? FileManager.default.contentsOfDirectory(atPath: folder.path), contents.isEmpty {
