@@ -19,27 +19,22 @@ if ! python3 --version &>/dev/null; then
     return 1
 fi
 
-# Ensure pip is up-to-date
-pip install --upgrade pip
-
-# Confirm virtual environment activation
+# Ensure we have a virtual environment; create and activate if needed
 if [[ "$VIRTUAL_ENV" == "" ]]; then
-    echo "Error: Virtual environment is not activated. Please activate it and re-run the script."
-    return 1
+    if [ ! -d "venv" ]; then
+        echo "Creating virtual environment..."
+        python3 -m venv venv
+        echo "Virtual environment created."
+    fi
+    # Activate the newly created or existing venv
+    source venv/bin/activate
 fi
 
-# Ensure the script uses a virtual environment for dependency management
-if [ ! -d "venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv venv
-    echo "Virtual environment created."
-fi
-
-# Activate the virtual environment
-source venv/bin/activate
+# Ensure pip is up-to-date inside the venv
+python3 -m pip install --upgrade pip
 
 # Install dependencies
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 
 echo "Dependencies installed and virtual environment is ready."
 echo "[robo-rewind] venv activated and dependencies installed."
