@@ -111,9 +111,14 @@ struct ARPreviewView: UIViewRepresentable {
             } else {
                 MCP.log("Error: Camera intrinsics or image resolution not available for meta.json")
             }
-            recordingManager?.stopRecording()
-            isRecording = false
-            MCP.log("Recording stopped.")
+            session.getCurrentWorldMap { [weak self] map, error in
+                if let map = map, let data = try? NSKeyedArchiver.archivedData(withRootObject: map, requiringSecureCoding: true) {
+                    self?.recordingManager?.setWorldMapData(data)
+                }
+                self?.recordingManager?.stopRecording()
+                self?.isRecording = false
+                MCP.log("Recording stopped.")
+            }
         }
         
         func updateRecordingState(device: MTLDevice) { // Add MTLDevice parameter
@@ -172,8 +177,24 @@ struct ARPreviewView: UIViewRepresentable {
                             // Use depth.depthMap for CVPixelBuffer and add timestamp
                             self.recordingManager?.appendDepthData(depthData: depth.depthMap, timestamp: frame.timestamp)
                         }
-                        self.recordingManager?.appendCameraPose(frame.camera.transform, timestamp: frame.timestamp)
+                        self.recordingManager?.appendCameraPose(transform: cameraTransform, timestamp: frame.timestamp)
                     }
+                }
+            }
+        }
+
+        func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
+            for anchor in anchors {
+                if let meshAnchor = anchor as? ARMeshAnchor {
+                    recordingManager?.addMeshAnchor(meshAnchor)
+                }
+            }
+        }
+
+        func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
+            for anchor in anchors {
+                if let meshAnchor = anchor as? ARMeshAnchor {
+                    recordingManager?.addMeshAnchor(meshAnchor)
                 }
             }
         }

@@ -28,12 +28,14 @@ class RecordingManager {
     private var sessionStartWallClock: TimeInterval?
     private var sessionStartARKitTimestamp: TimeInterval?
     private var videoTimestampsJSON: [[String: Any]] = []
-    private var audioRecorder: AVAudioRecorder?
     private var cameraPoses: [[String: Any]] = []
     /// Weak reference to the AR session so we can grab a world map and mesh
     /// when recording stops. Exposed as read-only so external callers can
     /// supply a session but not replace it mid-recording.
     private(set) weak var arSession: ARSession?
+    private var audioRecorder: AVAudioRecorder?
+    private var meshAnchors: [ARMeshAnchor] = []
+    private var worldMapData: Data?
 
     func setCameraIntrinsics(_ m: simd_float3x3, imageResolution: CGSize) {
         cameraIntrinsics = m
@@ -129,19 +131,21 @@ class RecordingManager {
         // Audio
         let audioURL = dir.appendingPathComponent("audio.m4a")
         let audioSettings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 44100,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVNumberOfChannelsKey: 1
         ]
         do {
             audioRecorder = try AVAudioRecorder(url: audioURL, settings: audioSettings)
             audioRecorder?.prepareToRecord()
             audioRecorder?.record()
-            MCP.log("RecordingManager: Started microphone recording")
         } catch {
             MCP.log("RecordingManager: ERROR starting audio recorder: \(error)")
+            audioRecorder = nil
         }
+
+        cameraPoses = []
+        meshAnchors = []
         
         isRecording = true
         MCP.log("RecordingManager: Created scan directory at \(dir.path). isRecording = true.")
@@ -181,15 +185,45 @@ class RecordingManager {
         
         videoInput?.markAsFinished()
         MCP.log("RecordingManager: videoInput marked as finished.")
-        
+
+        audioRecorder?.stop()
+        audioRecorder = nil
+
         // Close file handles first
         depthFileHandle?.closeFile()
         imuFileHandle?.closeFile()
         MCP.log("RecordingManager: Closed depth and IMU file handles.")
 
-        audioRecorder?.stop()
-        audioRecorder = nil
-        MCP.log("RecordingManager: Stopped audio recording.")
+        // Save camera poses if any
+        if let dir = self.outputDirectory, !cameraPoses.isEmpty {
+            let posesURL = dir.appendingPathComponent("camera_poses.json")
+            if let data = try? JSONSerialization.data(withJSONObject: cameraPoses, options: .prettyPrinted) {
+                try? data.write(to: posesURL)
+                MCP.log("RecordingManager: Wrote camera poses to \(posesURL.path)")
+            }
+        }
+
+        // Save mesh if collected
+        if let dir = self.outputDirectory, !meshAnchors.isEmpty {
+            let meshURL = dir.appendingPathComponent("mesh.obj")
+            do {
+                try exportMesh(to: meshURL)
+                MCP.log("RecordingManager: Wrote mesh to \(meshURL.path)")
+            } catch {
+                MCP.log("RecordingManager: ERROR writing mesh: \(error)")
+            }
+        }
+
+        // Save world map if available
+        if let dir = self.outputDirectory, let mapData = worldMapData {
+            let mapURL = dir.appendingPathComponent("world_map.bin")
+            do {
+                try mapData.write(to: mapURL)
+                MCP.log("RecordingManager: Wrote world map to \(mapURL.path)")
+            } catch {
+                MCP.log("RecordingManager: ERROR writing world map: \(error)")
+            }
+        }
 
         // Write meta.json
         if let dir = self.outputDirectory {
@@ -578,6 +612,51 @@ class RecordingManager {
     
     private func saveDepthData(_ depthMap: CVPixelBuffer, timestamp: TimeInterval, frameIndex: Int) {
     // ...existing code...
+    }
+
+    func appendCameraPose(transform: simd_float4x4, timestamp: TimeInterval) {
+        guard isRecording else { return }
+        let matrix: [[Float]] = [
+            [transform.columns.0.x, transform.columns.0.y, transform.columns.0.z, transform.columns.0.w],
+            [transform.columns.1.x, transform.columns.1.y, transform.columns.1.z, transform.columns.1.w],
+            [transform.columns.2.x, transform.columns.2.y, transform.columns.2.z, transform.columns.2.w],
+            [transform.columns.3.x, transform.columns.3.y, transform.columns.3.z, transform.columns.3.w]
+        ]
+        cameraPoses.append(["timestamp": timestamp, "matrix": matrix])
+    }
+
+    func addMeshAnchor(_ anchor: ARMeshAnchor) {
+        meshAnchors.append(anchor)
+    }
+
+    func setWorldMapData(_ data: Data) {
+        worldMapData = data
+    }
+
+    private func exportMesh(to url: URL) throws {
+        var obj = ""
+        var currentIndex: UInt32 = 0
+        for anchor in meshAnchors {
+            let geometry = anchor.geometry
+            let vertexCount = geometry.vertices.count
+            let vertexPointer = geometry.vertices.buffer.contents().bindMemory(to: simd_float3.self, capacity: vertexCount)
+            for i in 0..<vertexCount {
+                let vertex = vertexPointer[i]
+                let pos4 = anchor.transform * simd_float4(vertex, 1.0)
+                let worldPos = simd_make_float3(pos4.x, pos4.y, pos4.z)
+                obj += String(format: "v %f %f %f\n", worldPos.x, worldPos.y, worldPos.z)
+            }
+            let indexCount = geometry.faces.count
+            let indexPointer = geometry.faces.buffer.contents().bindMemory(to: UInt32.self, capacity: indexCount)
+            for i in stride(from: 0, to: indexCount, by: 3) {
+                let i0 = currentIndex + indexPointer[i] + 1
+                let i1 = currentIndex + indexPointer[i+1] + 1
+                let i2 = currentIndex + indexPointer[i+2] + 1
+                obj += "f \(i0) \(i1) \(i2)\n"
+            }
+            currentIndex += UInt32(vertexCount)
+        }
+        try obj.write(to: url, atomically: true, encoding: .utf8)
     }
 
     // Helper for scan folder naming
