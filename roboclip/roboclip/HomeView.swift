@@ -36,6 +36,7 @@ struct HomeView: View {
             .onAppear {
                 MCP.log("HomeView appeared")
                 uploader.setIsRecording(isRecording)
+                uploader.refreshPendingUploads()
                 uploader.startUploadProcess()
             }
             .onChange(of: isRecording) { _, value in
