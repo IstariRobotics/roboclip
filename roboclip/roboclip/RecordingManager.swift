@@ -44,7 +44,7 @@ class RecordingManager {
         MCP.log("RecordingManager: Intrinsics and image resolution set - ImageSize: \(self.imageWidth)x\(self.imageHeight)")
     }
     
-    func startRecording(device: MTLDevice, arSession session: ARSession) {
+    func startRecording(arSession session: ARSession) {
         MCP.log("RecordingManager.startRecording() called")
         isRecording = false
         let fileManager = FileManager.default

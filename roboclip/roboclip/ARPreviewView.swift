@@ -96,11 +96,10 @@ struct ARPreviewView: UIViewRepresentable {
             MCP.log("ARKit session started with sceneDepth and high-res video.")
         }
         
-        func startRecording(device: MTLDevice) { // Add MTLDevice parameter
+        func startRecording() {
             MCP.log("Coordinator.startRecording() called")
             recordingManager = RecordingManager()
-            // Pass device and session to RecordingManager's startRecording
-            recordingManager?.startRecording(device: device, arSession: self.session)
+            recordingManager?.startRecording(arSession: self.session)
             isRecording = true
             MCP.log("Recording started.")
         }
@@ -121,9 +120,9 @@ struct ARPreviewView: UIViewRepresentable {
             }
         }
         
-        func updateRecordingState(device: MTLDevice) { // Add MTLDevice parameter
+        func updateRecordingState() {
             if parent.isRecording && !isRecording {
-                startRecording(device: device) // Pass device
+                startRecording()
             } else if !parent.isRecording && isRecording {
                 stopRecording()
             }
@@ -214,11 +213,7 @@ struct ARPreviewView: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: ARSCNView, context: Context) {
-        guard let device = uiView.device else {
-            MCP.log("Error: MTLDevice not available in ARSCNView. Cannot update recording state.")
-            return
-        }
-        context.coordinator.updateRecordingState(device: device) // Pass unwrapped device
+        context.coordinator.updateRecordingState()
     }
 } 
 
