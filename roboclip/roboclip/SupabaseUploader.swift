@@ -108,29 +108,46 @@ class SupabaseUploader: ObservableObject {
         }
     }
 
-    private func uploadAllRecordings() async {
+    private func scanPendingFolders() -> [URL] {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
-        // Remove empty Scan-* folders before counting pending sessions
         let scanFolders = (try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))?.filter { $0.lastPathComponent.hasPrefix("Scan-") && $0.hasDirectoryPath } ?? []
-        var pendingFolders: [URL] = []
+        var pending: [URL] = []
         for folder in scanFolders {
             if let contents = try? fileManager.contentsOfDirectory(atPath: folder.path), contents.isEmpty {
                 try? fileManager.removeItem(at: folder)
             } else if let contents = try? fileManager.contentsOfDirectory(atPath: folder.path), !contents.isEmpty {
-                pendingFolders.append(folder)
+                pending.append(folder)
             }
         }
-        let total = pendingFolders.count
+        return pending.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private func uploadAllRecordings() async {
+        var pendingFolders = scanPendingFolders()
         await MainActor.run {
             self.sessionStatuses = pendingFolders.map { SessionStatus(folderName: $0.lastPathComponent, progress: 0.0) }
         }
-        for (idx, folder) in pendingFolders.enumerated() {
+        var idx = 0
+        while idx < pendingFolders.count {
+            let folder = pendingFolders[idx]
             await MainActor.run {
                 self.statusText = "Uploading: \(folder.lastPathComponent)"
             }
             await uploadRecordingFolder(folder, index: idx)
-            await MainActor.run { self.progress = Double(idx+1) / Double(max(total,1)) }
+            idx += 1
+            let newFolders = scanPendingFolders()
+            for newFolder in newFolders {
+                if !pendingFolders.contains(newFolder) {
+                    pendingFolders.append(newFolder)
+                    await MainActor.run {
+                        self.sessionStatuses.append(SessionStatus(folderName: newFolder.lastPathComponent, progress: 0.0))
+                    }
+                }
+            }
+            await MainActor.run {
+                self.progress = Double(idx) / Double(max(pendingFolders.count, 1))
+            }
         }
     }
 
@@ -171,7 +188,9 @@ class SupabaseUploader: ObservableObject {
                         let elapsed = Date().timeIntervalSince(self.uploadStartTime ?? Date())
                         self.progress = Double(newCompleted) / Double(max(total, 1))
                         if index < self.sessionStatuses.count {
-                            self.sessionStatuses[index].progress = self.progress
+                            var statuses = self.sessionStatuses
+                            statuses[index].progress = self.progress
+                            self.sessionStatuses = statuses
                         }
                         if newCompleted > 1 {
                             let avgTime = elapsed / Double(newCompleted)
@@ -190,7 +209,9 @@ class SupabaseUploader: ObservableObject {
         }
         await MainActor.run {
             if index < self.sessionStatuses.count {
-                self.sessionStatuses[index].progress = 1.0
+                var statuses = self.sessionStatuses
+                statuses[index].progress = 1.0
+                self.sessionStatuses = statuses
             }
         }
         // If folder is empty after upload, remove it
