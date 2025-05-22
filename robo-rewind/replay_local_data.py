@@ -44,11 +44,23 @@ def parse_imu_bin(file_path):
                 if not line:
                     continue
                 parts = line.split(',')
-                if len(parts) == 10:
+                if len(parts) == 13:
+                    try:
+                        t_raw, roll, pitch, yaw, rx, ry, rz, ax, ay, az, gx, gy, gz = map(float, parts)
+                        events.append({
+                            "timestamp": t_raw,
+                            "attitude": {"roll": roll, "pitch": pitch, "yaw": yaw},
+                            "rotationRate": {"x": rx, "y": ry, "z": rz},
+                            "userAcceleration": {"x": ax, "y": ay, "z": az},
+                            "gravity": {"x": gx, "y": gy, "z": gz}
+                        })
+                    except ValueError as ve:
+                        print(f"Error converting line to floats: {line} - {ve}")
+                elif len(parts) == 10:
                     try:
                         t_raw, roll, pitch, yaw, rx, ry, rz, ax, ay, az = map(float, parts)
                         events.append({
-                            "timestamp": t_raw,  # wall-clock timestamp
+                            "timestamp": t_raw,
                             "attitude": {"roll": roll, "pitch": pitch, "yaw": yaw},
                             "rotationRate": {"x": rx, "y": ry, "z": rz},
                             "userAcceleration": {"x": ax, "y": ay, "z": az}
@@ -56,7 +68,7 @@ def parse_imu_bin(file_path):
                     except ValueError as ve:
                         print(f"Error converting line to floats: {line} - {ve}")
                 else:
-                    print(f"Skipping malformed line (expected 10 parts, got {len(parts)}): {line}")
+                    print(f"Skipping malformed line (expected 13 parts, got {len(parts)}): {line}")
     except Exception as e:
         print(f"Error parsing IMU data from {file_path}: {e}")
     return events

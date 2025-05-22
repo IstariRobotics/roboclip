@@ -172,6 +172,7 @@ struct ARPreviewView: UIViewRepresentable {
                             // Use depth.depthMap for CVPixelBuffer and add timestamp
                             self.recordingManager?.appendDepthData(depthData: depth.depthMap, timestamp: frame.timestamp)
                         }
+                        self.recordingManager?.appendCameraPose(frame.camera.transform, timestamp: frame.timestamp)
                     }
                 }
             }

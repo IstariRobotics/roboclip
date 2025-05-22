@@ -36,8 +36,11 @@
 2. **Frame handler** – enqueue RGB, depth, and pose using shared timestamps.
 3. **IMU** –** **`CMMotionManager.startDeviceMotionUpdates(to: queue)`.
 4. **Recording** –** **`AVAssetWriter` (HEVC 4:2:0) + custom files:
-   * `/depth/000123.d16` (Float16 plane)
-   * `imu.bin` (struct rows)
+   * `/depth/000123.d32` (Float32 plane)
+   * `imu.bin` (struct rows including gravity)
+   * `camera_poses.json` (ARKit camera transform per frame)
+   * `audio.m4a` (microphone recording)
+   * `world_map.bin` and `mesh.obj` (ARKit world map and environment mesh)
 5. **Shutdown** – stop session, finish writers, free pools.
 
 ---
@@ -101,10 +104,14 @@ Request when recording starts; update elapsed seconds every frame; end on stop.
 ```
 /Scan-YYYYMMDD-hhmm/
     video.mov              // HEVC 30–60 FPS
+    audio.m4a             // microphone capture
     meta.json              // intrinsics, device, app build
-    depth/                 // 16‑bit little‑endian planes
-        000001.d16
-    imu.bin                // timestamp + accel + gyro floats
+    camera_poses.json      // per-frame camera transform
+    world_map.bin          // ARKit world map
+    mesh.obj               // reconstructed mesh
+    depth/                 // 32‑bit little-endian planes
+        000001.d32
+    imu.bin                // timestamp + accel + gyro + gravity floats
 ```
 
 > Keep RGB, depth, IMU separate to simplify post‑processing in Python or MATLAB.
@@ -132,7 +139,7 @@ Request when recording starts; update elapsed seconds every frame; end on stop.
 ## 9 · Future Extensions (nice‑to‑have)
 
 * HDR video via manual** **`AVCaptureSession` path.
-* On‑device meshing & preview point‑cloud overlay.
+* World map and environment mesh capture with on‑device meshing.
 * Cloud sync of completed scans (iCloud Drive).
 * Background upload with** **`BackgroundTasks` while on Wi‑Fi.
 
