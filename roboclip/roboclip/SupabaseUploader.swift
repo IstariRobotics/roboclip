@@ -2,6 +2,7 @@ import Foundation
 import Supabase
 import Combine
 import Atomics
+import SwiftUI
 
 // Atomic integer wrapper for Swift concurrency compatibility
 final class ManagedAtomicInt {
@@ -39,6 +40,13 @@ class SupabaseUploader: ObservableObject {
     private var isRecording: Bool = false
     private var cancellables = Set<AnyCancellable>()
     private var uploadStartTime: Date? = nil
+
+    /// Upload settings stored in UserDefaults
+    @AppStorage("parallelUploads") private var parallelUploads: Bool = true
+    @AppStorage("maxParallelUploads") private var storedMaxParallelUploads: Int = 4
+
+    /// Current limit on concurrent uploads based on settings
+    private var maxConcurrentUploads: Int { parallelUploads ? storedMaxParallelUploads : 1 }
     
     @Published var isSignedIn: Bool = false
     private var accessToken: String? = nil
@@ -105,6 +113,7 @@ class SupabaseUploader: ObservableObject {
         }
     }
 
+
     /// Find all non-empty `Scan-*` folders in the temp directory and remove any empty ones.
     private func scanPendingFolders() -> [URL] {
         let fileManager = FileManager.default
@@ -153,8 +162,11 @@ class SupabaseUploader: ObservableObject {
         }
         await withTaskGroup(of: Void.self) { group in
             let completed = ManagedAtomicInt()
+            let semaphore = DispatchSemaphore(value: maxConcurrentUploads)
             for file in files {
                 group.addTask {
+                    semaphore.wait()
+                    defer { semaphore.signal() }
                     let relPath = file.path.replacingOccurrences(of: folder.deletingLastPathComponent().path + "/", with: "")
                     await MainActor.run {
                         self.currentFile = relPath

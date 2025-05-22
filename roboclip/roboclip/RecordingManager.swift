@@ -232,7 +232,7 @@ class RecordingManager {
                 "scan_id": self.outputDirectory?.lastPathComponent ?? UUID().uuidString,
                 "timestamp_iso8601": ISO8601DateFormatter().string(from: Date()),
                 "platform": "iOS",
-                "device_model": UIDevice.current.model,
+                "device_model": UIDevice.current.modelName,
                 "os_version": UIDevice.current.systemVersion,
                 "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "N/A",
                 "build_number": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "N/A",
