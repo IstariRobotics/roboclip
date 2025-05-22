@@ -141,7 +141,7 @@ struct SettingsView: View {
             Section(header: Text("App Info")) {
                 HStack { Text("Version"); Spacer(); Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "").foregroundColor(.secondary) }
                 HStack { Text("Build"); Spacer(); Text(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "").foregroundColor(.secondary) }
-                HStack { Text("Device"); Spacer(); Text(UIDevice.current.model).foregroundColor(.secondary) }
+                HStack { Text("Device"); Spacer(); Text(UIDevice.current.modelName).foregroundColor(.secondary) }
                 HStack { Text("System"); Spacer(); Text(UIDevice.current.systemVersion).foregroundColor(.secondary) }
             }
             Section(header: Text("Upload Behavior")) {
