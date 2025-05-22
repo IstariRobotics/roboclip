@@ -12,11 +12,16 @@ final class ManagedAtomicInt {
     }
 }
 
+// Allow passing the atomic counter across concurrency domains
+extension ManagedAtomicInt: @unchecked Sendable {}
+
 /// Tracks progress for an individual session upload
-struct SessionStatus: Identifiable {
-    let id = UUID()
-    let folderName: String
+struct SessionStatus: Identifiable, Equatable {
+    let id: UUID
+    let folderURL: URL
     var progress: Double
+
+    var folderName: String { folderURL.lastPathComponent }
 }
 
 class SupabaseUploader: ObservableObject {
@@ -108,6 +113,8 @@ class SupabaseUploader: ObservableObject {
         }
     }
 
+
+    /// Find all non-empty `Scan-*` folders in the temp directory and remove any empty ones.
     private func scanPendingFolders() -> [URL] {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
@@ -126,32 +133,27 @@ class SupabaseUploader: ObservableObject {
     private func uploadAllRecordings() async {
         var pendingFolders = scanPendingFolders()
         await MainActor.run {
-            self.sessionStatuses = pendingFolders.map { SessionStatus(folderName: $0.lastPathComponent, progress: 0.0) }
+            self.sessionStatuses = pendingFolders.map { SessionStatus(id: UUID(), folderURL: $0, progress: 0.0) }
         }
         var idx = 0
         while idx < pendingFolders.count {
             let folder = pendingFolders[idx]
-            await MainActor.run {
-                self.statusText = "Uploading: \(folder.lastPathComponent)"
-            }
-            await uploadRecordingFolder(folder, index: idx)
+            await MainActor.run { self.statusText = "Uploading: \(folder.lastPathComponent)" }
+            let sessionID = await MainActor.run { self.sessionStatuses[idx].id }
+            await uploadRecordingFolder(folder, sessionID: sessionID)
             idx += 1
             let newFolders = scanPendingFolders()
-            for newFolder in newFolders {
-                if !pendingFolders.contains(newFolder) {
-                    pendingFolders.append(newFolder)
-                    await MainActor.run {
-                        self.sessionStatuses.append(SessionStatus(folderName: newFolder.lastPathComponent, progress: 0.0))
-                    }
+            for newFolder in newFolders where !pendingFolders.contains(newFolder) {
+                pendingFolders.append(newFolder)
+                await MainActor.run {
+                    self.sessionStatuses.append(SessionStatus(id: UUID(), folderURL: newFolder, progress: 0.0))
                 }
             }
-            await MainActor.run {
-                self.progress = Double(idx) / Double(max(pendingFolders.count, 1))
-            }
+            await MainActor.run { self.progress = Double(idx) / Double(max(pendingFolders.count, 1)) }
         }
     }
 
-    private func uploadRecordingFolder(_ folder: URL, index: Int) async {
+    private func uploadRecordingFolder(_ folder: URL, sessionID: UUID) async {
         let bucket = client.storage.from(bucketName)
         let files = allFiles(in: folder)
         let total = files.count
@@ -187,9 +189,9 @@ class SupabaseUploader: ObservableObject {
                     await MainActor.run {
                         let elapsed = Date().timeIntervalSince(self.uploadStartTime ?? Date())
                         self.progress = Double(newCompleted) / Double(max(total, 1))
-                        if index < self.sessionStatuses.count {
+                        if let idx = self.sessionStatuses.firstIndex(where: { $0.id == sessionID }) {
                             var statuses = self.sessionStatuses
-                            statuses[index].progress = self.progress
+                            statuses[idx].progress = self.progress
                             self.sessionStatuses = statuses
                         }
                         if newCompleted > 1 {
@@ -208,11 +210,16 @@ class SupabaseUploader: ObservableObject {
             await group.waitForAll()
         }
         await MainActor.run {
-            if index < self.sessionStatuses.count {
+            if let idx = self.sessionStatuses.firstIndex(where: { $0.id == sessionID }) {
                 var statuses = self.sessionStatuses
-                statuses[index].progress = 1.0
+                statuses[idx].progress = 1.0
                 self.sessionStatuses = statuses
             }
+        }
+        // Remove the session from the UI after a brief delay
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        await MainActor.run {
+            self.sessionStatuses.removeAll { $0.id == sessionID }
         }
         // If folder is empty after upload, remove it
         if let contents = try? FileManager.default.contentsOfDirectory(atPath: folder.path), contents.isEmpty {
