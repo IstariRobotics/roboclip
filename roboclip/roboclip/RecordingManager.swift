@@ -29,6 +29,10 @@ class RecordingManager {
     private var sessionStartARKitTimestamp: TimeInterval?
     private var videoTimestampsJSON: [[String: Any]] = []
     private var cameraPoses: [[String: Any]] = []
+    /// Weak reference to the AR session so we can grab a world map and mesh
+    /// when recording stops. Exposed as read-only so external callers can
+    /// supply a session but not replace it mid-recording.
+    private(set) weak var arSession: ARSession?
     private var audioRecorder: AVAudioRecorder?
     private var meshAnchors: [ARMeshAnchor] = []
     private var worldMapData: Data?
@@ -40,7 +44,7 @@ class RecordingManager {
         MCP.log("RecordingManager: Intrinsics and image resolution set - ImageSize: \(self.imageWidth)x\(self.imageHeight)")
     }
     
-    func startRecording(device: MTLDevice, arSession: ARSession) {
+    func startRecording(device: MTLDevice, arSession session: ARSession) {
         MCP.log("RecordingManager.startRecording() called")
         isRecording = false
         let fileManager = FileManager.default
@@ -53,7 +57,7 @@ class RecordingManager {
         videoFrameIndex = 0 // Reset frame index at start
         videoTimestampsJSON = [] // Reset JSON array at start
         cameraPoses = []
-        self.arSession = arSession
+        self.arSession = session
         
         // Video
         let videoURL = dir.appendingPathComponent("video.mov")
@@ -146,7 +150,7 @@ class RecordingManager {
         isRecording = true
         MCP.log("RecordingManager: Created scan directory at \(dir.path). isRecording = true.")
 
-        if let currentFrame = arSession.currentFrame {
+        if let currentFrame = session.currentFrame {
             // Store wall-clock and ARKit timestamps for absolute time conversion
             self.sessionStartWallClock = Date().timeIntervalSince1970
             self.sessionStartARKitTimestamp = currentFrame.timestamp
