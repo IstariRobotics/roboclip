@@ -22,12 +22,12 @@ roboclip is an iOS app for recording synchronized LiDAR depth, RGB video, and IM
 - `roboclip/RecordingsListView.swift`: Lists and manages recordings
 - `roboclip/HomeView.swift`: Main navigation and upload status
 - `roboclip/SettingsView.swift`: App settings and developer tools
-- `roboclip/SupabaseSecrets.xcconfi`: **Not committed** (see below)
+- `roboclip/SupabaseSecrets.xcconfig`: **Not committed** (see below)
 
 ## Supabase Setup
 
 1. Create a project at [Supabase](https://supabase.com/)
-2. Add your `SUPABASE_URL` and `SUPABASE_ANON_KEY` to `roboclip/SupabaseSecrets.xcconfi`
+2. Add your `SUPABASE_URL` and `SUPABASE_ANON_KEY` to `roboclip/SupabaseSecrets.xcconfig`
 3. This file is ignored by git for security
 
 ## Building & Running
@@ -38,7 +38,7 @@ roboclip is an iOS app for recording synchronized LiDAR depth, RGB video, and IM
 
 ## Security
 
-- `roboclip/SupabaseSecrets.xcconfi` is in `.gitignore` and should never be committed
+- `roboclip/SupabaseSecrets.xcconfig` is in `.gitignore` and should never be committed
 - Do not share your Supabase anon key publicly
 
 ## License
