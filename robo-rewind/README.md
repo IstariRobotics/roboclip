@@ -22,6 +22,7 @@ This folder contains scripts and utilities to fetch and replay Supabase session 
   python replay_local_data.py
   ```
 - The output will be saved as `rerun_sessions.json` by default.
+- `rerun_sessions.json` is listed in `.gitignore`, so your results won't be committed.
 
 ## Notes
 - The file `roboclip/roboclip/SupabaseSecrets.xcconfig` is ignored by git for security.
