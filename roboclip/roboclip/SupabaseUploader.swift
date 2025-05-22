@@ -106,14 +106,14 @@ class SupabaseUploader: ObservableObject {
 
     func startUploadProcess() {
         guard !isUploading, !isRecording else { return }
-        MCP.log("Starting upload process")
-        refreshPendingUploads()
-        isUploading = true
-        progress = 0.0
-        statusText = ""
-        currentFile = ""
-        estimatedTime = ""
-        uploadStartTime = Date()
+        Task { @MainActor in
+            self.isUploading = true
+            self.progress = 0.0
+            self.statusText = ""
+            self.currentFile = ""
+            self.estimatedTime = ""
+            self.uploadStartTime = Date()
+        }
         uploadTask = Task {
             await uploadAllRecordings()
             await finishUploadUI()
@@ -136,7 +136,6 @@ class SupabaseUploader: ObservableObject {
         }
     }
 
-
     /// Find all non-empty `Scan-*` folders in the temp directory and remove any empty ones.
     private func scanPendingFolders() -> [URL] {
         let fileManager = FileManager.default
@@ -158,13 +157,13 @@ class SupabaseUploader: ObservableObject {
         await MainActor.run {
             self.sessionStatuses = pendingFolders.map { SessionStatus(id: UUID(), folderURL: $0, progress: 0.0) }
         }
-        var idx = 0
-        while idx < pendingFolders.count {
-            let folder = pendingFolders[idx]
+        for folder in pendingFolders {
             await MainActor.run { self.statusText = "Uploading: \(folder.lastPathComponent)" }
-            let sessionID = await MainActor.run { self.sessionStatuses[idx].id }
+            let sessionID = await MainActor.run {
+                self.sessionStatuses.first(where: { $0.folderURL == folder })?.id ?? UUID()
+            }
             await uploadRecordingFolder(folder, sessionID: sessionID)
-            idx += 1
+            // After upload, check for new folders
             let newFolders = scanPendingFolders()
             for newFolder in newFolders where !pendingFolders.contains(newFolder) {
                 pendingFolders.append(newFolder)
@@ -172,7 +171,10 @@ class SupabaseUploader: ObservableObject {
                     self.sessionStatuses.append(SessionStatus(id: UUID(), folderURL: newFolder, progress: 0.0))
                 }
             }
-            await MainActor.run { self.progress = Double(idx) / Double(max(pendingFolders.count, 1)) }
+            await MainActor.run {
+                let completedCount = pendingFolders.firstIndex(of: folder).map { $0 + 1 } ?? 1
+                self.progress = Double(completedCount) / Double(max(pendingFolders.count, 1))
+            }
         }
     }
 
@@ -183,55 +185,60 @@ class SupabaseUploader: ObservableObject {
         await MainActor.run {
             self.currentFile = ""
         }
-        await withTaskGroup(of: Void.self) { group in
-            let completed = ManagedAtomicInt()
-            let semaphore = DispatchSemaphore(value: maxConcurrentUploads)
-            for file in files {
-                group.addTask {
-                    semaphore.wait()
-                    defer { semaphore.signal() }
-                    let relPath = file.path.replacingOccurrences(of: folder.deletingLastPathComponent().path + "/", with: "")
-                    await MainActor.run {
-                        self.currentFile = relPath
-                    }
-                    if await !self.remoteFileExists(bucket: bucket, path: relPath) {
-                        if let data = try? Data(contentsOf: file) {
-                            MCP.log("Uploading file: \(relPath)")
-                            let success = await self.uploadWithRetry(bucket: bucket, path: relPath, data: data)
-                            if success {
-                                try? FileManager.default.removeItem(at: file)
+        // Limit concurrency using TaskGroup and chunking
+        let chunkSize = maxConcurrentUploads
+        let fileChunks = stride(from: 0, to: files.count, by: chunkSize).map { Array(files[$0..<min($0+chunkSize, files.count)]) }
+        var completed = 0
+        for chunk in fileChunks {
+            await withTaskGroup(of: Void.self) { group in
+                for file in chunk {
+                    group.addTask { [self] in
+                        let relPath = file.path.replacingOccurrences(of: folder.deletingLastPathComponent().path + "/", with: "")
+                        await MainActor.run {
+                            self.currentFile = relPath
+                        }
+                        if await !self.remoteFileExists(bucket: bucket, path: relPath) {
+                            if let data = try? Data(contentsOf: file) {
+                                MCP.log("Uploading file: \(relPath)")
+                                let success = await self.uploadWithRetry(bucket: bucket, path: relPath, data: data)
+                                if success {
+                                    MCP.log("Upload succeeded for file: \(relPath)")
+                                    try? FileManager.default.removeItem(at: file)
+                                } else {
+                                    MCP.log("Upload failed for file: \(relPath)")
+                                }
+                            } else {
+                                MCP.log("Failed to read file: \(file.path)")
                             }
                         } else {
-                            MCP.log("Failed to read file: \(file.path)")
+                            MCP.log("File already exists remotely (skipped): \(relPath)")
+                            try? FileManager.default.removeItem(at: file)
                         }
-                    } else {
-                        MCP.log("File already exists remotely (skipped): \(relPath)")
-                        try? FileManager.default.removeItem(at: file)
-                    }
-                    let newCompleted = completed.increment()
-                    await MainActor.run {
-                        let elapsed = Date().timeIntervalSince(self.uploadStartTime ?? Date())
-                        let sessionProgress = Double(newCompleted) / Double(max(total, 1))
-                        if let idx = self.sessionStatuses.firstIndex(where: { $0.id == sessionID }) {
-                            var statuses = self.sessionStatuses
-                            statuses[idx].progress = sessionProgress
-                            self.sessionStatuses = statuses
-                        }
-                        self.progress = sessionProgress
-                        if newCompleted > 1 {
-                            let avgTime = elapsed / Double(newCompleted)
-                            let remaining = Double(total - newCompleted) * avgTime
-                            let formatter = DateComponentsFormatter()
-                            formatter.allowedUnits = [.minute, .second]
-                            formatter.unitsStyle = .abbreviated
-                            self.estimatedTime = formatter.string(from: remaining) ?? ""
-                        } else {
-                            self.estimatedTime = ""
+                        let newCompleted = completed.increment()
+                        await MainActor.run {
+                            let elapsed = Date().timeIntervalSince(self.uploadStartTime ?? Date())
+                            let sessionProgress = Double(newCompleted) / Double(max(total, 1))
+                            if let idx = self.sessionStatuses.firstIndex(where: { $0.id == sessionID }) {
+                                var statuses = self.sessionStatuses
+                                statuses[idx].progress = sessionProgress
+                                self.sessionStatuses = statuses
+                            }
+                            self.progress = sessionProgress
+                            if newCompleted > 1 {
+                                let avgTime = elapsed / Double(newCompleted)
+                                let remaining = Double(total - newCompleted) * avgTime
+                                let formatter = DateComponentsFormatter()
+                                formatter.allowedUnits = [.minute, .second]
+                                formatter.unitsStyle = .abbreviated
+                                self.estimatedTime = formatter.string(from: remaining) ?? ""
+                            } else {
+                                self.estimatedTime = ""
+                            }
                         }
                     }
                 }
+                await group.waitForAll()
             }
-            await group.waitForAll()
         }
         await MainActor.run {
             if let idx = self.sessionStatuses.firstIndex(where: { $0.id == sessionID }) {
@@ -298,12 +305,22 @@ class SupabaseUploader: ObservableObject {
             let fileManager = FileManager.default
             let tempDir = fileManager.temporaryDirectory
             let scanFolders = (try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))?.filter { $0.hasDirectoryPath && $0.lastPathComponent.hasPrefix("Scan-") } ?? []
+            var removedCount = 0
             for folder in scanFolders {
-                try? fileManager.removeItem(at: folder)
+                do {
+                    try fileManager.removeItem(at: folder)
+                    removedCount += 1
+                } catch {
+                    MCP.log("Failed to remove folder: \(folder.path) error: \(error)")
+                }
             }
             await MainActor.run {
-                MCP.log("Cleared all Scan-* folders from temp dir: \(tempDir.path)")
-                // Optionally update UI state here if needed
+                MCP.log("Cleared all Scan-* folders from temp dir: \(tempDir.path), removed \(removedCount) folders.")
+                self.statusText = removedCount > 0 ? "Upload cache cleared (\(removedCount) folders removed)" : "No upload cache to clear."
+                self.sessionStatuses.removeAll()
+                self.progress = 0.0
+                self.currentFile = ""
+                self.estimatedTime = ""
             }
         }
     }
