@@ -61,20 +61,39 @@ class RecordingManager {
 
         // --- AUDIO SESSION SETUP ---
         let audioSession = AVAudioSession.sharedInstance()
-        audioSession.requestRecordPermission { granted in
-            DispatchQueue.main.async {
-                if !granted {
-                    MCP.log("RecordingManager: Microphone permission denied.")
-                    return
+        if #available(iOS 17.0, *) {
+            AVAudioApplication.requestRecordPermission { granted in
+                DispatchQueue.main.async {
+                    if !granted {
+                        MCP.log("RecordingManager: Microphone permission denied.")
+                        return
+                    }
+                    do {
+                        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+                        try audioSession.setActive(true)
+                    } catch {
+                        MCP.log("RecordingManager: ERROR setting up AVAudioSession: \(error)")
+                        return
+                    }
+                    self.startRecordingInternal(dir: dir, session: session)
                 }
-                do {
-                    try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
-                    try audioSession.setActive(true)
-                } catch {
-                    MCP.log("RecordingManager: ERROR setting up AVAudioSession: \(error)")
-                    return
+            }
+        } else {
+            audioSession.requestRecordPermission { granted in
+                DispatchQueue.main.async {
+                    if !granted {
+                        MCP.log("RecordingManager: Microphone permission denied.")
+                        return
+                    }
+                    do {
+                        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+                        try audioSession.setActive(true)
+                    } catch {
+                        MCP.log("RecordingManager: ERROR setting up AVAudioSession: \(error)")
+                        return
+                    }
+                    self.startRecordingInternal(dir: dir, session: session)
                 }
-                self.startRecordingInternal(dir: dir, session: session)
             }
         }
     }
@@ -241,6 +260,7 @@ class RecordingManager {
                 "timestamp_iso8601": ISO8601DateFormatter().string(from: Date()),
                 "platform": "iOS",
                 "device_model": UIDevice.current.modelName,
+                "device_id": UIDevice.current.identifierForVendor?.uuidString ?? "unknown",
                 "os_version": UIDevice.current.systemVersion,
                 "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "N/A",
                 "build_number": Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "N/A",

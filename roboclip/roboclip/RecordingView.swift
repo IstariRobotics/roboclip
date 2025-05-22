@@ -7,6 +7,7 @@ struct RecordingView: View {
     @State private var elapsed: TimeInterval = 0
     @State private var showConfirmation = false
     @State private var pendingStop = false
+    @EnvironmentObject private var uploader: SupabaseUploader
     
     var body: some View {
         ZStack {
@@ -58,6 +59,9 @@ struct RecordingView: View {
                 isRecording = false
                 pendingStop = false
                 MCP.log("User chose to save recording")
+                // Trigger upload immediately after saving
+                uploader.refreshPendingUploads()
+                uploader.startUploadProcess()
             }
             Button("Delete", role: .destructive) {
                 isRecording = false

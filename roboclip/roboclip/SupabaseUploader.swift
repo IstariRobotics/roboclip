@@ -157,19 +157,29 @@ class SupabaseUploader: ObservableObject {
         await MainActor.run {
             self.sessionStatuses = pendingFolders.map { SessionStatus(id: UUID(), folderURL: $0, progress: 0.0) }
         }
-        for folder in pendingFolders {
-            await MainActor.run { self.statusText = "Uploading: \(folder.lastPathComponent)" }
+        var foldersToUpload = pendingFolders
+        var uploadedFolders: Set<URL> = []
+        while !foldersToUpload.isEmpty {
+            let folder = foldersToUpload.removeFirst()
+            await MainActor.run {
+                self.statusText = "Uploading: \(folder.lastPathComponent)"
+            }
             let sessionID = await MainActor.run {
                 self.sessionStatuses.first(where: { $0.folderURL == folder })?.id ?? UUID()
             }
             await uploadRecordingFolder(folder, sessionID: sessionID)
+            uploadedFolders.insert(folder)
             // After upload, check for new folders
-            let newFolders = scanPendingFolders()
-            for newFolder in newFolders where !pendingFolders.contains(newFolder) {
-                pendingFolders.append(newFolder)
+            let currentPendingFolders = scanPendingFolders()
+            let newFolders = currentPendingFolders.filter { !pendingFolders.contains($0) && !uploadedFolders.contains($0) && !foldersToUpload.contains($0) }
+            if !newFolders.isEmpty {
+                foldersToUpload.append(contentsOf: newFolders)
                 await MainActor.run {
-                    self.sessionStatuses.append(SessionStatus(id: UUID(), folderURL: newFolder, progress: 0.0))
+                    for newFolder in newFolders {
+                        self.sessionStatuses.append(SessionStatus(id: UUID(), folderURL: newFolder, progress: 0.0))
+                    }
                 }
+                pendingFolders.append(contentsOf: newFolders)
             }
             await MainActor.run {
                 let completedCount = pendingFolders.firstIndex(of: folder).map { $0 + 1 } ?? 1
