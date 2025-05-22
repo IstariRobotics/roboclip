@@ -19,7 +19,7 @@ This folder contains scripts and utilities to fetch and replay Supabase session 
 
 - To fetch and transform Supabase sessions, run:
   ```zsh
-  python replay_sessions.py
+  python replay_local_data.py
   ```
 - The output will be saved as `rerun_sessions.json` by default.
 
