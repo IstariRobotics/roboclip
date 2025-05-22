@@ -7,6 +7,7 @@ import Foundation
 import AVFoundation
 import ARKit
 import CoreMotion
+import Metal
 
 class RecordingManager {
     private var assetWriter: AVAssetWriter?
@@ -543,18 +544,30 @@ class RecordingManager {
         var vertexOffset: Int32 = 0
         for anchor in anchors {
             let geometry = anchor.geometry
-            let vertexCount = geometry.vertices.count
-            for v in 0..<vertexCount {
-                let vertex = geometry.vertex(at: UInt32(v))
-                let world = (anchor.transform * simd_float4(vertex, 1))
+
+            // Extract vertices from ARGeometrySource buffer
+            let vertexSource = geometry.vertices
+            let vertexBuffer = vertexSource.buffer.contents().bindMemory(to: SIMD3<Float>.self,
+                                                                        capacity: vertexSource.count)
+            for v in 0..<vertexSource.count {
+                let vertex = vertexBuffer[v]
+                let world = anchor.transform * SIMD4<Float>(vertex, 1)
                 objLines.append(String(format: "v %f %f %f", world.x, world.y, world.z))
             }
-            let faceCount = geometry.faces.count
-            for f in 0..<faceCount {
-                let indices = geometry.faces.indices(for: UInt32(f))
-                objLines.append("f \(indices.0 + 1 + vertexOffset) \(indices.1 + 1 + vertexOffset) \(indices.2 + 1 + vertexOffset)")
+
+            // Extract triangle indices from ARGeometryElement buffer
+            let faces = geometry.faces
+            let indexBuffer = faces.buffer.contents().bindMemory(to: UInt32.self,
+                                                                 capacity: faces.count * 3)
+            for f in 0..<faces.count {
+                let base = f * 3
+                let i0 = Int32(indexBuffer[base])
+                let i1 = Int32(indexBuffer[base + 1])
+                let i2 = Int32(indexBuffer[base + 2])
+                objLines.append("f \(i0 + 1 + vertexOffset) \(i1 + 1 + vertexOffset) \(i2 + 1 + vertexOffset)")
             }
-            vertexOffset += Int32(vertexCount)
+
+            vertexOffset += Int32(vertexSource.count)
         }
         let data = objLines.joined(separator: "\n")
         try data.write(to: url, atomically: true, encoding: .utf8)
