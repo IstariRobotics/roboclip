@@ -130,18 +130,10 @@ class SupabaseUploader: ObservableObject {
                     }
                     if await !self.remoteFileExists(bucket: bucket, path: relPath) {
                         if let data = try? Data(contentsOf: file) {
-                            do {
-                                MCP.log("Uploading file: \(relPath)")
-                                _ = try await bucket.upload(relPath, data: data)
-                                MCP.log("Upload succeeded: \(relPath)")
+                            MCP.log("Uploading file: \(relPath)")
+                            let success = await self.uploadWithRetry(bucket: bucket, path: relPath, data: data)
+                            if success {
                                 try? FileManager.default.removeItem(at: file)
-                            } catch {
-                                if let storageError = error as? StorageError, storageError.message.contains("already exists") {
-                                    MCP.log("Upload failed (already exists, deleting local): \(relPath)")
-                                    try? FileManager.default.removeItem(at: file)
-                                } else {
-                                    MCP.log("Upload failed: \(relPath) error: \(error)")
-                                }
                             }
                         } else {
                             MCP.log("Failed to read file: \(file.path)")
@@ -194,6 +186,29 @@ class SupabaseUploader: ObservableObject {
             MCP.log("remoteFileExists: \(path) -> false (\(error))")
             return false
         }
+    }
+
+    /// Upload a file with retry logic to handle transient network errors.
+    private func uploadWithRetry(bucket: StorageFileApi, path: String, data: Data, maxRetries: Int = 3) async -> Bool {
+        for attempt in 1...maxRetries {
+            do {
+                _ = try await bucket.upload(path, data: data)
+                MCP.log("Upload succeeded: \(path) on attempt \(attempt)")
+                return true
+            } catch {
+                if let storageError = error as? StorageError, storageError.message.contains("already exists") {
+                    MCP.log("File already exists remotely: \(path)")
+                    return true
+                }
+                MCP.log("Upload attempt \(attempt) failed for \(path): \(error)")
+                if attempt < maxRetries {
+                    let delay = UInt64(attempt) * 1_000_000_000 // seconds in ns
+                    try? await Task.sleep(nanoseconds: delay)
+                }
+            }
+        }
+        MCP.log("All upload attempts failed for \(path)")
+        return false
     }
 
     func clearUploadCache() {

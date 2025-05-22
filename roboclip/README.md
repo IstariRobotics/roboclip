@@ -7,11 +7,13 @@ roboclip is an iOS app for recording synchronized LiDAR depth, RGB video, and IM
 ## Features
 
 - Real-time ARKit preview with LiDAR and RGB video
-- Synchronized recording of video, depth, and IMU data
+- Synchronized recording of video, depth (Float32), IMU data with gravity, and microphone audio
+- Per-frame camera poses saved from the ARKit camera transform
+- Optional capture of ARKit world map and environment mesh
 - Each session saved in a timestamped Scan-* folder
 - Modern SwiftUI UI: Home and Recording views
 - Uploads new recordings to Supabase Storage with progress and estimated time
-- Uploads are robust, parallelized, and only count pending sessions
+- Uploads are robust, parallelized, retrying transient errors, and only count pending sessions
 - Settings view for cache clearing, app info, and debug tools
 
 ## File Structure
