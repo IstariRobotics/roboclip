@@ -1,5 +1,6 @@
 # Ignore macOS system files
 .DS_Store
+Media/ 
 
 # Python virtual environments
 venv-py311/
