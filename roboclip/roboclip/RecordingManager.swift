@@ -51,6 +51,8 @@ class RecordingManager {
         recordingStartTime = nil
         videoFrameIndex = 0 // Reset frame index at start
         videoTimestampsJSON = [] // Reset JSON array at start
+        cameraPoses = []
+        self.arSession = arSession
         
         // Video
         let videoURL = dir.appendingPathComponent("video.mov")
@@ -274,6 +276,47 @@ class RecordingManager {
             }
         }
 
+        // Write camera_poses.json
+        if let dir = self.outputDirectory {
+            let poseURL = dir.appendingPathComponent("camera_poses.json")
+            do {
+                let data = try JSONSerialization.data(withJSONObject: cameraPoses, options: .prettyPrinted)
+                try data.write(to: poseURL)
+                MCP.log("RecordingManager: Wrote camera_poses.json to \(poseURL.path)")
+            } catch {
+                MCP.log("RecordingManager: ERROR writing camera_poses.json: \(error)")
+            }
+        }
+
+        // Save ARKit world map and mesh
+        if let session = self.arSession, let dir = self.outputDirectory {
+            let mapURL = dir.appendingPathComponent("world_map.bin")
+            session.getCurrentWorldMap { worldMap, error in
+                if let worldMap = worldMap {
+                    do {
+                        let data = try NSKeyedArchiver.archivedData(withRootObject: worldMap, requiringSecureCoding: true)
+                        try data.write(to: mapURL)
+                        MCP.log("RecordingManager: Saved world map to \(mapURL.path)")
+                    } catch {
+                        MCP.log("RecordingManager: ERROR saving world map: \(error)")
+                    }
+                } else if let error = error {
+                    MCP.log("RecordingManager: ERROR retrieving world map: \(error.localizedDescription)")
+                }
+            }
+
+            if let frame = session.currentFrame {
+                let meshURL = dir.appendingPathComponent("mesh.obj")
+                let meshAnchors = frame.anchors.compactMap { $0 as? ARMeshAnchor }
+                do {
+                    try self.saveMeshOBJ(anchors: meshAnchors, to: meshURL)
+                    MCP.log("RecordingManager: Saved mesh to \(meshURL.path)")
+                } catch {
+                    MCP.log("RecordingManager: ERROR saving mesh: \(error)")
+                }
+            }
+        }
+
         guard let writer = assetWriter else {
             MCP.log("RecordingManager: stopRecording - assetWriter is nil. No video to finish. Calling completion.")
             completion?()
@@ -439,6 +482,23 @@ class RecordingManager {
             }
         }
     }
+
+    func appendCameraPose(_ transform: simd_float4x4, timestamp: TimeInterval) {
+        guard isRecording else { return }
+        let wallClock: TimeInterval
+        if let startWall = sessionStartWallClock, let startAR = sessionStartARKitTimestamp {
+            wallClock = startWall + (timestamp - startAR)
+        } else {
+            wallClock = Date().timeIntervalSince1970
+        }
+        let matrix: [[Float]] = [
+            [transform.columns.0.x, transform.columns.0.y, transform.columns.0.z, transform.columns.0.w],
+            [transform.columns.1.x, transform.columns.1.y, transform.columns.1.z, transform.columns.1.w],
+            [transform.columns.2.x, transform.columns.2.y, transform.columns.2.z, transform.columns.2.w],
+            [transform.columns.3.x, transform.columns.3.y, transform.columns.3.z, transform.columns.3.w]
+        ]
+        cameraPoses.append(["timestamp": wallClock, "matrix": matrix])
+    }
     
     func appendDepthData(depthData: CVPixelBuffer, timestamp: TimeInterval) {
         guard isRecording, let dir = outputDirectory else { return }
@@ -506,9 +566,31 @@ class RecordingManager {
         } else {
             wallClock = Date().timeIntervalSince1970 // fallback
         }
-        // Write as CSV row with header: wall_clock,roll,pitch,yaw,rotX,rotY,rotZ,accX,accY,accZ
-        let row = String(format: "%0.6f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n", wallClock, imu.attitude.roll, imu.attitude.pitch, imu.attitude.yaw, imu.rotationRate.x, imu.rotationRate.y, imu.rotationRate.z, imu.userAcceleration.x, imu.userAcceleration.y, imu.userAcceleration.z)
+        // Write as CSV row with header: wall_clock,roll,pitch,yaw,rotX,rotY,rotZ,accX,accY,accZ,gravX,gravY,gravZ
+        let row = String(format: "%0.6f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n", wallClock, imu.attitude.roll, imu.attitude.pitch, imu.attitude.yaw, imu.rotationRate.x, imu.rotationRate.y, imu.rotationRate.z, imu.userAcceleration.x, imu.userAcceleration.y, imu.userAcceleration.z, imu.gravity.x, imu.gravity.y, imu.gravity.z)
         handle.write(row.data(using: .utf8)!)
+    }
+
+    private func saveMeshOBJ(anchors: [ARMeshAnchor], to url: URL) throws {
+        var objLines: [String] = []
+        var vertexOffset: Int32 = 0
+        for anchor in anchors {
+            let geometry = anchor.geometry
+            let vertexCount = geometry.vertices.count
+            for v in 0..<vertexCount {
+                let vertex = geometry.vertex(at: UInt32(v))
+                let world = (anchor.transform * simd_float4(vertex, 1))
+                objLines.append(String(format: "v %f %f %f", world.x, world.y, world.z))
+            }
+            let faceCount = geometry.faces.count
+            for f in 0..<faceCount {
+                let indices = geometry.faces.indices(for: UInt32(f))
+                objLines.append("f \(indices.0 + 1 + vertexOffset) \(indices.1 + 1 + vertexOffset) \(indices.2 + 1 + vertexOffset)")
+            }
+            vertexOffset += Int32(vertexCount)
+        }
+        let data = objLines.joined(separator: "\n")
+        try data.write(to: url, atomically: true, encoding: .utf8)
     }
     
     private func saveDepthData(_ depthMap: CVPixelBuffer, timestamp: TimeInterval, frameIndex: Int) {
