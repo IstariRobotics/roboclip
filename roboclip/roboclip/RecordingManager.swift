@@ -610,9 +610,6 @@ class RecordingManager {
         try data.write(to: url, atomically: true, encoding: .utf8)
     }
     
-    private func saveDepthData(_ depthMap: CVPixelBuffer, timestamp: TimeInterval, frameIndex: Int) {
-    // ...existing code...
-    }
 
     func appendCameraPose(transform: simd_float4x4, timestamp: TimeInterval) {
         guard isRecording else { return }
