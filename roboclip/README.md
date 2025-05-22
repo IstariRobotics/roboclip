@@ -16,6 +16,7 @@ The home screen now shows an **Uploads** section beneath the record button that 
 - Modern SwiftUI UI: Home and Recording views
 - Uploads new recordings to Supabase Storage with per-session progress tracking
 - Uploads are robust, parallelized, retrying transient errors, and only count pending sessions
+- Uploads kick off automatically when returning to the home screen or after a recording completes
 - Completed uploads are automatically removed from local storage
 - Settings view for cache clearing, app info, and debug tools
 

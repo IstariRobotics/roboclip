@@ -33,14 +33,13 @@ struct HomeView: View {
                     SettingsLink()
                 }
             }
-            .task {
+            .onAppear {
                 MCP.log("HomeView appeared")
                 uploader.setIsRecording(isRecording)
                 uploader.startUploadProcess()
             }
             .onChange(of: isRecording) { _, value in
                 uploader.setIsRecording(value)
-                if !value { uploader.startUploadProcess() }
             }
             // Only keep .record navigation
             .navigationDestination(for: Destination.self) { dest in
