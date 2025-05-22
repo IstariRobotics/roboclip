@@ -77,8 +77,12 @@ class SupabaseUploader: ObservableObject {
 
     func setIsRecording(_ recording: Bool) {
         isRecording = recording
-        if !isRecording {
-            startUploadProcess()
+        if !recording {
+            Task { [weak self] in
+                // Give the recording manager a moment to finish writing files
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                self?.startUploadProcess()
+            }
         }
     }
 

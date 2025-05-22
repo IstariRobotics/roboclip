@@ -9,38 +9,37 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack(path: $navPath) {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // 1️⃣ Primary feature button (Record only)
+            List {
+                Section {
                     FeatureButton(title: "Record",
                                   systemImage: "record.circle.fill",
                                   tint: .red) {
                         navPath.append(Destination.record)
                     }
-                    // 2️⃣ Upload status bar
-                    if uploader.isUploading {
+                }
+
+                if !uploader.sessionStatuses.isEmpty {
+                    Section("Uploads") {
                         ForEach(uploader.sessionStatuses) { session in
-                            UploadStatusBar(progress: session.progress,
-                                            text: "Uploading: \(session.folderName)")
+                            UploadRow(session: session)
                         }
                     }
                 }
-                .padding()
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("roboclip")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     SettingsLink()
                 }
             }
-            .task {
+            .onAppear {
                 MCP.log("HomeView appeared")
                 uploader.setIsRecording(isRecording)
                 uploader.startUploadProcess()
             }
             .onChange(of: isRecording) { _, value in
                 uploader.setIsRecording(value)
-                if !value { uploader.startUploadProcess() }
             }
             // Only keep .record navigation
             .navigationDestination(for: Destination.self) { dest in
@@ -90,21 +89,24 @@ struct FeatureButton: View {
     }
 }
 
-/// Compact progress bar with status text.
-struct UploadStatusBar: View {
-    var progress: Double
-    var text: String
+/// Row showing progress for an uploading session.
+struct UploadRow: View {
+    var session: SessionStatus
 
     var body: some View {
-        VStack(spacing: 4) {
-            ProgressView(value: progress)
-            Text(text)
-                .font(.footnote)
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(session.folderName)
+                    .font(.subheadline)
+                ProgressView(value: session.progress)
+            }
+            Spacer()
+            Text("\(Int(session.progress * 100))%")
+                .font(.caption)
+                .monospacedDigit()
                 .foregroundColor(.secondary)
         }
-        .padding()
-        .frame(maxWidth: .infinity)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.vertical, 4)
     }
 }
 
