@@ -32,3 +32,5 @@ DerivedData/
 # Node modules (if any)
 node_modules/
 robo-rewind/supabase_bucket_permissions.sql
+robo-rewind/rerun_sessions.json
+__pycache__/
