@@ -41,5 +41,7 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>This app uses the camera for AR and LiDAR capture.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app records audio as part of AR capture.</string>
 </dict>
 </plist>

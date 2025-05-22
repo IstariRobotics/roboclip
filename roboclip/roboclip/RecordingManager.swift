@@ -58,7 +58,29 @@ class RecordingManager {
         videoTimestampsJSON = [] // Reset JSON array at start
         cameraPoses = []
         self.arSession = session
-        
+
+        // --- AUDIO SESSION SETUP ---
+        let audioSession = AVAudioSession.sharedInstance()
+        audioSession.requestRecordPermission { granted in
+            DispatchQueue.main.async {
+                if !granted {
+                    MCP.log("RecordingManager: Microphone permission denied.")
+                    return
+                }
+                do {
+                    try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+                    try audioSession.setActive(true)
+                } catch {
+                    MCP.log("RecordingManager: ERROR setting up AVAudioSession: \(error)")
+                    return
+                }
+                self.startRecordingInternal(dir: dir, session: session)
+            }
+        }
+    }
+
+    // Internal function to continue recording setup after permission granted
+    private func startRecordingInternal(dir: URL, session: ARSession) {
         // Video
         let videoURL = dir.appendingPathComponent("video.mov")
         do {
@@ -67,25 +89,21 @@ class RecordingManager {
             MCP.log("RecordingManager: ERROR - Failed to initialize AVAssetWriter: \(error.localizedDescription)")
             return
         }
-
         guard let strongAssetWriter = assetWriter else {
             MCP.log("RecordingManager: ERROR - assetWriter is nil after init attempt.")
             return
         }
-
         let settings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: 1920,
             AVVideoHeightKey: 1080
         ]
         videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
-        
         guard let strongVideoInput = videoInput else {
             MCP.log("RecordingManager: ERROR - videoInput is nil after init attempt.")
             assetWriter = nil
             return
         }
-
         if strongAssetWriter.canAdd(strongVideoInput) {
             strongAssetWriter.add(strongVideoInput)
         } else {
@@ -94,7 +112,6 @@ class RecordingManager {
             assetWriter = nil
             return
         }
-        
         let attrs: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
             kCVPixelBufferWidthKey as String: 1920,
@@ -103,7 +120,6 @@ class RecordingManager {
         ]
         pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: strongVideoInput, sourcePixelBufferAttributes: attrs)
         CVPixelBufferPoolCreate(nil, nil, attrs as CFDictionary, &pixelBufferPool)
-        
         if !strongAssetWriter.startWriting() {
             MCP.log("RecordingManager: ERROR - assetWriter.startWriting() failed. Status: \(strongAssetWriter.status.rawValue). Error: \(strongAssetWriter.error?.localizedDescription ?? "Unknown error")")
             videoInput = nil
@@ -111,7 +127,6 @@ class RecordingManager {
             return
         }
         strongAssetWriter.startSession(atSourceTime: .zero)
-        
         if strongAssetWriter.status == .failed {
              MCP.log("RecordingManager: assetWriter status is FAILED after startWriting/startSession. Error: \(strongAssetWriter.error?.localizedDescription ?? "Unknown error")")
              videoInput = nil
@@ -119,15 +134,13 @@ class RecordingManager {
              return
         }
         MCP.log("RecordingManager: AVAssetWriter started successfully.")
-
         // Depth
         let depthDir = dir.appendingPathComponent("depth")
-        try? fileManager.createDirectory(at: depthDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: depthDir, withIntermediateDirectories: true)
         // IMU
         let imuURL = dir.appendingPathComponent("imu.bin")
-        fileManager.createFile(atPath: imuURL.path, contents: nil)
+        FileManager.default.createFile(atPath: imuURL.path, contents: nil)
         imuFileHandle = try? FileHandle(forWritingTo: imuURL)
-
         // Audio
         let audioURL = dir.appendingPathComponent("audio.m4a")
         let audioSettings: [String: Any] = [
@@ -143,18 +156,13 @@ class RecordingManager {
             MCP.log("RecordingManager: ERROR starting audio recorder: \(error)")
             audioRecorder = nil
         }
-
         cameraPoses = []
         meshAnchors = []
-        
         isRecording = true
         MCP.log("RecordingManager: Created scan directory at \(dir.path). isRecording = true.")
-
         if let currentFrame = session.currentFrame {
-            // Store wall-clock and ARKit timestamps for absolute time conversion
             self.sessionStartWallClock = Date().timeIntervalSince1970
             self.sessionStartARKitTimestamp = currentFrame.timestamp
-
             let depthMap = currentFrame.sceneDepth?.depthMap ?? currentFrame.smoothedSceneDepth?.depthMap
             if let validDepthMap = depthMap {
                 self.depthWidth = CVPixelBufferGetWidth(validDepthMap)
