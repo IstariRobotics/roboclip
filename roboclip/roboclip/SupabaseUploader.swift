@@ -81,6 +81,7 @@ class SupabaseUploader: ObservableObject {
             Task { [weak self] in
                 // Give the recording manager a moment to finish writing files
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
+                self?.refreshPendingUploads()
                 self?.startUploadProcess()
             }
         }
@@ -105,6 +106,8 @@ class SupabaseUploader: ObservableObject {
 
     func startUploadProcess() {
         guard !isUploading, !isRecording else { return }
+        MCP.log("Starting upload process")
+        refreshPendingUploads()
         isUploading = true
         progress = 0.0
         statusText = ""
@@ -114,6 +117,22 @@ class SupabaseUploader: ObservableObject {
         uploadTask = Task {
             await uploadAllRecordings()
             await finishUploadUI()
+        }
+    }
+
+    /// Scan for pending folders and update `sessionStatuses` without starting an upload.
+    func refreshPendingUploads() {
+        let folders = scanPendingFolders()
+        Task { @MainActor in
+            var updated: [SessionStatus] = []
+            for folder in folders {
+                if let existing = self.sessionStatuses.first(where: { $0.folderURL == folder }) {
+                    updated.append(existing)
+                } else {
+                    updated.append(SessionStatus(id: UUID(), folderURL: folder, progress: 0.0))
+                }
+            }
+            self.sessionStatuses = updated
         }
     }
 
@@ -192,12 +211,13 @@ class SupabaseUploader: ObservableObject {
                     let newCompleted = completed.increment()
                     await MainActor.run {
                         let elapsed = Date().timeIntervalSince(self.uploadStartTime ?? Date())
-                        self.progress = Double(newCompleted) / Double(max(total, 1))
+                        let sessionProgress = Double(newCompleted) / Double(max(total, 1))
                         if let idx = self.sessionStatuses.firstIndex(where: { $0.id == sessionID }) {
                             var statuses = self.sessionStatuses
-                            statuses[idx].progress = self.progress
+                            statuses[idx].progress = sessionProgress
                             self.sessionStatuses = statuses
                         }
+                        self.progress = sessionProgress
                         if newCompleted > 1 {
                             let avgTime = elapsed / Double(newCompleted)
                             let remaining = Double(total - newCompleted) * avgTime
