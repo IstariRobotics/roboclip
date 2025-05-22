@@ -3,7 +3,7 @@ import SwiftUI
 /// Home screen rebuilt with modern SwiftUI patterns and clearer component boundaries.
 struct HomeView: View {
     @EnvironmentObject private var authManager: AuthManager
-    @StateObject private var uploader = SupabaseUploader(authManager: AuthManager())
+    @EnvironmentObject private var uploader: SupabaseUploader
     @AppStorage("isRecording") private var isRecording: Bool = false
     @State private var navPath = NavigationPath()
 
@@ -167,6 +167,9 @@ struct SettingsView: View {
 // MARK: - Preview ----------------------------------------------------------------------
 
 #Preview {
-    HomeView()
-        .environmentObject(AuthManager())
+    let authManager = AuthManager()
+    let uploader = SupabaseUploader(authManager: authManager)
+    return HomeView()
+        .environmentObject(uploader)
+        .environmentObject(authManager)
 }
