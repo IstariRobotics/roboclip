@@ -108,34 +108,115 @@ def mirror_bucket():
     print(f"Bucket mirrored to {DATA_DIR}")
 
 def scan_local_data():
-    """Scan and report on local data"""
+    """Scan and report on local data, comparing with bucket metadata for upload status."""
     if not DATA_DIR.exists():
         print("Data directory doesn't exist. Run mirror_bucket() first.")
         return
-        
-    # Count files
-    file_count = 0
-    dir_count = 0
-    scan_dirs = []
-    total_size = 0
+
+    bucket_files_info = []
+    if METADATA_FILE.exists():
+        with open(METADATA_FILE, 'r') as f:
+            bucket_metadata = json.load(f)
+            bucket_files_info = bucket_metadata.get("files", [])
+            print(f"Loaded bucket metadata with {len(bucket_files_info)} file records.")
+    else:
+        print(f"Warning: {METADATA_FILE} not found. Cannot determine upload status.")
+
+    # Create a set of PosixPath objects for efficient lookup
+    bucket_file_paths = {Path(file_info["name"]) for file_info in bucket_files_info if "name" in file_info}
+
+    scan_dirs_details = []
+    total_size_bytes = 0
+    total_local_files_in_scans = 0
+
+    for item in DATA_DIR.iterdir():
+        if item.is_dir() and item.name.startswith("Scan-"):
+            scan_id = item.name
+            session_path = DATA_DIR / scan_id
+            session_bucket_path = Path(scan_id) # Relative path for bucket checking
+
+            local_meta = (session_path / "meta.json").exists()
+            local_video = (session_path / "video.mov").exists()
+            local_imu = (session_path / "imu.bin").exists()
+            local_depth_dir = (session_path / "depth").is_dir()
+            local_depth_files = list((session_path / "depth").glob("*.d32")) if local_depth_dir else []
+            local_depth_files_count = len(local_depth_files)
+            local_depth_present = local_depth_dir and local_depth_files_count > 0
+
+            uploaded_meta = (session_bucket_path / "meta.json") in bucket_file_paths
+            uploaded_video = (session_bucket_path / "video.mov") in bucket_file_paths
+            uploaded_imu = (session_bucket_path / "imu.bin") in bucket_file_paths
+            
+            uploaded_depth_files_count = 0
+            if local_depth_dir:
+                for local_depth_file_path in local_depth_files:
+                    # Construct the expected path in the bucket
+                    expected_bucket_depth_file_path = session_bucket_path / "depth" / local_depth_file_path.name
+                    if expected_bucket_depth_file_path in bucket_file_paths:
+                        uploaded_depth_files_count += 1
+            
+            all_depth_uploaded = False
+            if local_depth_present:
+                all_depth_uploaded = (uploaded_depth_files_count == local_depth_files_count)
+            elif not local_depth_present and uploaded_depth_files_count > 0:
+                # Edge case: depth files in bucket but not locally (maybe deleted locally after mirror)
+                pass # Or mark as "orphaned in bucket"
+            elif not local_depth_present and uploaded_depth_files_count == 0:
+                all_depth_uploaded = True # No local depth, no uploaded depth = consistent
+
+            scan_details = {
+                "id": scan_id,
+                "local": {
+                    "meta": local_meta,
+                    "video": local_video,
+                    "imu": local_imu,
+                    "depth_files": local_depth_files_count
+                },
+                "uploaded": {
+                    "meta": uploaded_meta,
+                    "video": uploaded_video,
+                    "imu": uploaded_imu,
+                    "depth_files": uploaded_depth_files_count,
+                    "all_depth_fully_uploaded": all_depth_uploaded
+                }
+            }
+            scan_dirs_details.append(scan_details)
+
+            for f_path in session_path.rglob('*'):
+                if f_path.is_file():
+                    total_local_files_in_scans += 1
+                    total_size_bytes += f_path.stat().st_size
     
-    for root, dirs, files in os.walk(DATA_DIR):
-        for d in dirs:
-            if d.startswith("Scan-"):
-                scan_dirs.append(d)
-            dir_count += 1
-                
-        for f in files:
-            if f != "bucket_metadata.json":
-                file_path = os.path.join(root, f)
-                file_count += 1
-                total_size += os.path.getsize(file_path)
-    
-    print(f"Local data summary:")
-    print(f"- {len(scan_dirs)} scan directories")
-    print(f"- {file_count} files (excluding metadata)")
-    print(f"- {dir_count} directories")
-    print(f"- {total_size / (1024*1024):.2f} MB total size")
+    # Account for bucket_metadata.json itself
+    num_other_files = 0
+    if METADATA_FILE.exists():
+        num_other_files +=1
+        total_size_bytes += METADATA_FILE.stat().st_size
+
+    print("\n--- Local Data Scan & Upload Status ---")
+    if not scan_dirs_details:
+        print("No local 'Scan-' directories found.")
+    else:
+        scan_dirs_details.sort(key=lambda x: x['id'])
+        for details in scan_dirs_details:
+            print(f"\nSession: {details['id']}")
+            print(f"  Meta:     Local: {'Yes' if details['local']['meta'] else 'No '}{'*' if details['local']['meta'] and not details['uploaded']['meta'] else ' '} | Uploaded: {'Yes' if details['uploaded']['meta'] else 'No '}")
+            print(f"  Video:    Local: {'Yes' if details['local']['video'] else 'No '}{'*' if details['local']['video'] and not details['uploaded']['video'] else ' '} | Uploaded: {'Yes' if details['uploaded']['video'] else 'No '}")
+            print(f"  IMU:      Local: {'Yes' if details['local']['imu'] else 'No '}{'*' if details['local']['imu'] and not details['uploaded']['imu'] else ' '} | Uploaded: {'Yes' if details['uploaded']['imu'] else 'No '}")
+            depth_local_count = details['local']['depth_files']
+            depth_uploaded_count = details['uploaded']['depth_files']
+            depth_fully_uploaded = details['uploaded']['all_depth_fully_uploaded']
+            depth_sync_marker = '*' if depth_local_count > 0 and not depth_fully_uploaded else ' '
+            print(f"  Depth:    Local: {depth_local_count:>3} files{depth_sync_marker} | Uploaded: {depth_uploaded_count:>3} files (All: {'Yes' if depth_fully_uploaded else 'No'})")
+
+    print("\n(* indicates present locally but not confirmed uploaded based on last mirror metadata)")
+
+    print("\n--- Local Storage Summary ---")
+    print(f"- {len(scan_dirs_details)} scan directories processed")
+    print(f"- {total_local_files_in_scans} files within scan directories")
+    if num_other_files > 0:
+        print(f"- {num_other_files} other file(s) (e.g., bucket_metadata.json)")
+    print(f"- {total_size_bytes / (1024*1024):.2f} MB total local size")
 
 def clear_local_data():
     """Clear the local data directory"""

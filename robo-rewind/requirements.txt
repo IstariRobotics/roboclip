@@ -2,3 +2,4 @@ requests
 numpy
 rerun-sdk
 supabase
+opencv-python
