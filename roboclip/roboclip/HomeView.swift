@@ -19,8 +19,10 @@ struct HomeView: View {
                     }
                     // 2️⃣ Upload status bar
                     if uploader.isUploading {
-                        UploadStatusBar(progress: uploader.progress,
-                                        text: uploader.statusText)
+                        ForEach(uploader.sessionStatuses) { session in
+                            UploadStatusBar(progress: session.progress,
+                                            text: "Uploading: \(session.folderName)")
+                        }
                     }
                 }
                 .padding()
