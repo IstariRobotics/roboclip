@@ -56,7 +56,6 @@
 
 ```
 HomeView
- ├─ RecordingsListView → RecordingDetailView (readonly playback)
  └─ RecordingView (live capture)
       ↳ onFinish → Save/Delete confirmation → HomeView
 ```
@@ -66,7 +65,7 @@ HomeView
 ### 5.2 HomeView
 
 * **Record Button** – primary action; pushes** **`RecordingView`.
-* **View Recordings** – secondary button; pushes** **`RecordingsListView`.
+* **View Recordings** – secondary button to browse saved sessions.
 * Layout guideline:** **`VStack` centred, large icons; hide status bar.
 
 ### 5.3 RecordingView
@@ -164,7 +163,7 @@ Request when recording starts; update elapsed seconds every frame; end on stop.
 
 ### Phase 4: UI/UX Implementation
 
-- [x] Build HomeView with navigation to RecordingView and RecordingsListView
+- [x] Build HomeView with navigation to RecordingView
 - [x] Implement RecordingView with ARPreview, ControlBar, and confirmation dialog
 - [x] Add reusable UI components (RecordButton, BlinkingIndicator, MetalPreviewLayer)
 - [x] Use MCP to debug navigation and UI state

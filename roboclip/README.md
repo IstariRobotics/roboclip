@@ -9,7 +9,7 @@ roboclip is an iOS app for recording synchronized LiDAR depth, RGB video, and IM
 - Real-time ARKit preview with LiDAR and RGB video
 - Synchronized recording of video, depth, and IMU data
 - Each session saved in a timestamped Scan-* folder
-- Modern SwiftUI UI: Home, Recording, and Recordings List views
+- Modern SwiftUI UI: Home and Recording views
 - Uploads new recordings to Supabase Storage with progress and estimated time
 - Uploads are robust, parallelized, and only count pending sessions
 - Settings view for cache clearing, app info, and debug tools
@@ -19,7 +19,6 @@ roboclip is an iOS app for recording synchronized LiDAR depth, RGB video, and IM
 - `roboclip/RecordingManager.swift`: Handles video, depth, and IMU recording
 - `roboclip/ARPreviewView.swift`: ARKit session and preview
 - `roboclip/SupabaseUploader.swift`: Uploads sessions to Supabase
-- `roboclip/RecordingsListView.swift`: Lists and manages recordings
 - `roboclip/HomeView.swift`: Main navigation and upload status
 - `roboclip/SettingsView.swift`: App settings and developer tools
 - `roboclip/SupabaseSecrets.xcconfi`: **Not committed** (see below)
