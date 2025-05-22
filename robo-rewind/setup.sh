@@ -43,4 +43,4 @@ pip install -r requirements.txt
 
 echo "Dependencies installed and virtual environment is ready."
 echo "[robo-rewind] venv activated and dependencies installed."
-echo "To visualize IMU data with rerun.io, run: python3 replay_sessions.py"
+echo "To visualize IMU data with rerun.io, run: python3 replay_local_data.py"

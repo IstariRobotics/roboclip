@@ -15,7 +15,7 @@ def find_scan_folders():
     """Find all Scan-* folders in the local data directory"""
     if not DATA_DIR.exists():
         print(f"Data directory {DATA_DIR} doesn't exist.")
-        print("Please run sync_supabase_bucket.py first to download data.")
+        print("Please run mirror_bucket.py first to download data.")
         return []
         
     # Look for Scan-* folders
