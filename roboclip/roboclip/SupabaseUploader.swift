@@ -121,9 +121,9 @@ class SupabaseUploader: ObservableObject {
         let scanFolders = (try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles))?.filter { $0.lastPathComponent.hasPrefix("Scan-") && $0.hasDirectoryPath } ?? []
         var pending: [URL] = []
         for folder in scanFolders {
-            if let contents = try? fileManager.contentsOfDirectory(atPath: folder.path), contents.isEmpty {
+            if allFiles(in: folder).isEmpty {
                 try? fileManager.removeItem(at: folder)
-            } else if let contents = try? fileManager.contentsOfDirectory(atPath: folder.path), !contents.isEmpty {
+            } else {
                 pending.append(folder)
             }
         }
@@ -221,10 +221,8 @@ class SupabaseUploader: ObservableObject {
         await MainActor.run {
             self.sessionStatuses.removeAll { $0.id == sessionID }
         }
-        // If folder is empty after upload, remove it
-        if let contents = try? FileManager.default.contentsOfDirectory(atPath: folder.path), contents.isEmpty {
-            try? FileManager.default.removeItem(at: folder)
-        }
+        // Delete the session folder now that all files are uploaded
+        try? FileManager.default.removeItem(at: folder)
     }
 
     private func allFiles(in folder: URL) -> [URL] {
