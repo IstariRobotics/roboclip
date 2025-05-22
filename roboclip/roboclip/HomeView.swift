@@ -9,30 +9,47 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack(path: $navPath) {
-            List {
-                Section {
-                    FeatureButton(title: "Record",
-                                  systemImage: "record.circle.fill",
-                                  tint: .red) {
-                        navPath.append(Destination.record)
-                    }
-                }
-
-                if !uploader.sessionStatuses.isEmpty {
-                    Section("Uploads") {
-                        ForEach(uploader.sessionStatuses) { session in
-                            UploadRow(session: session)
-                        }
-                    }
-                }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle("roboclip")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            VStack(spacing: 0) {
+                // Modern bold header
+                HStack {
+                    Text("roboclip")
+                        .font(.largeTitle.bold())
+                        .foregroundColor(.primary)
+                    Spacer()
                     SettingsLink()
                 }
+                .padding([.top, .horizontal])
+                .padding(.bottom, 8)
+
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Card-style record button
+                        FeatureButton(title: "Record",
+                                      systemImage: "record.circle.fill",
+                                      tint: .red) {
+                            navPath.append(Destination.record)
+                        }
+                        .padding(.horizontal)
+
+                        // Uploads section
+                        if !uploader.sessionStatuses.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Uploads")
+                                    .font(.title3.bold())
+                                    .padding(.leading, 4)
+                                ForEach(uploader.sessionStatuses) { session in
+                                    UploadRow(session: session)
+                                        .padding(.horizontal, 2)
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                    }
+                    .padding(.top, 8)
+                }
             }
+            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .navigationBarHidden(true)
             .onAppear {
                 MCP.log("HomeView appeared")
                 uploader.setIsRecording(isRecording)
@@ -42,7 +59,6 @@ struct HomeView: View {
             .onChange(of: isRecording) { _, value in
                 uploader.setIsRecording(value)
             }
-            // Only keep .record navigation
             .navigationDestination(for: Destination.self) { dest in
                 switch dest {
                 case .record:
@@ -72,21 +88,39 @@ struct FeatureButton: View {
     let systemImage: String
     let tint: Color
     let action: () -> Void
+    @State private var isPressed = false
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 44))
+            VStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(tint.opacity(0.18))
+                        .frame(width: 70, height: 70)
+                        .shadow(color: tint.opacity(0.18), radius: 8, y: 4)
+                    Image(systemName: systemImage)
+                        .font(.system(size: 38, weight: .bold))
+                        .foregroundColor(tint)
+                }
                 Text(title)
                     .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
             }
-            .frame(maxWidth: .infinity, minHeight: 120)
-            .foregroundColor(.white)
-            .background(tint.gradient)
-            .cornerRadius(14)
-            .shadow(radius: 4, y: 2)
+            .padding(.vertical, 18)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(isPressed ? 0.08 : 0.13), radius: isPressed ? 2 : 8, y: isPressed ? 1 : 4)
+            )
+            .scaleEffect(isPressed ? 0.97 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
         }
+        .buttonStyle(PlainButtonStyle())
+        .simultaneousGesture(DragGesture(minimumDistance: 0)
+            .onChanged { _ in isPressed = true }
+            .onEnded { _ in isPressed = false })
     }
 }
 
@@ -99,6 +133,7 @@ struct UploadRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.folderName)
                     .font(.subheadline)
+                    .fontWeight(.medium)
                 ProgressView(value: session.progress)
             }
             Spacer()
@@ -107,7 +142,14 @@ struct UploadRow: View {
                 .monospacedDigit()
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+                .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+        )
+        .padding(.vertical, 2)
     }
 }
 
