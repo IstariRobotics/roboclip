@@ -89,11 +89,16 @@ struct ARPreviewView: UIViewRepresentable {
         func startSession() {
             let config = ARWorldTrackingConfiguration()
             config.frameSemantics = [.sceneDepth, .smoothedSceneDepth]
+            if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+                config.sceneReconstruction = .mesh
+            } else {
+                MCP.log("Scene reconstruction not supported on this device")
+            }
             if let videoFormat = ARWorldTrackingConfiguration.recommendedVideoFormatForHighResolutionFrameCapturing {
                 config.videoFormat = videoFormat
             }
             session.run(config, options: [.resetTracking, .removeExistingAnchors])
-            MCP.log("ARKit session started with sceneDepth and high-res video.")
+            MCP.log("ARKit session started with sceneDepth, mesh reconstruction, and high-res video.")
         }
         
         func startRecording(device: MTLDevice) { // Add MTLDevice parameter
