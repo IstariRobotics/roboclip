@@ -23,6 +23,11 @@ This folder contains scripts and utilities to fetch and replay Supabase session 
   ```
 - The output will be saved as `rerun_sessions.json` by default.
 - `rerun_sessions.json` is listed in `.gitignore`, so your results won't be committed.
+- To export a recorded session to the [ARFlow](https://github.com/princeton-vl/ARFlow) dataset layout, run:
+  ```zsh
+  python export_to_arflow.py /path/to/Scan-YYYYMMDD-hhmm /path/to/output_dir
+  ```
+  This writes RGB frames, depth maps, camera poses, IMU and intrinsics following ARFlow's naming scheme.
 - To compute optical flow from depth frames and camera poses, run:
   ```zsh
   python compute_optical_flow.py --session_id Scan-YYYYMMDD-HHMM
