@@ -28,6 +28,11 @@ This folder contains scripts and utilities to fetch and replay Supabase session 
   python export_to_arflow.py /path/to/Scan-YYYYMMDD-hhmm /path/to/output_dir
   ```
   This writes RGB frames, depth maps, camera poses, IMU and intrinsics following ARFlow's naming scheme.
+- To compute optical flow from depth frames and camera poses, run:
+  ```zsh
+  python compute_optical_flow.py --session_id Scan-YYYYMMDD-HHMM
+  ```
+  Optical flow files (`.flow.npy`) will be written next to the depth data of the specified session.
 
 ## Notes
 - The file `roboclip/roboclip/SupabaseSecrets.xcconfig` is ignored by git for security.
