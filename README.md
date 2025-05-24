@@ -21,6 +21,9 @@ This repository contains two complementary pieces:
    ```bash
    source setup.sh
    ```
-3. Use `python replay_sessions.py` or other scripts in the folder to work with your recordings. The helper `sync_supabase_bucket.py` at the repo root can download the entire bucket for offline replay.
+3. Use `python replay_sessions.py` or other scripts in the folder to work with your recordings. The helper `robo-rewind/mirror_bucket.py` can download the entire bucket for offline replay:
+   ```bash
+   python robo-rewind/mirror_bucket.py
+   ```
 
 For full instructions and advanced usage, read the READMEs in each subdirectory.
