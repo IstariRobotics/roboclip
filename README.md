@@ -4,6 +4,8 @@ This repository contains two complementary pieces:
 
 - **roboclip** – a Swift iOS app for capturing LiDAR depth, RGB video and IMU pose data. Recordings are saved in timestamped folders and can be uploaded to Supabase Storage. See [roboclip/README.md](roboclip/README.md) for a tour of the app and its architecture.
 - **robo-rewind** – a set of Python tools for mirroring your Supabase bucket and replaying sessions with [rerun.io](https://www.rerun.io/). Details are in [robo-rewind/README.md](robo-rewind/README.md).
+- **roboclip-web** – a Next.js app that lists sessions from Supabase and visualizes them with rerun.io in the browser. See [web/README.md](web/README.md).
+
 
 ## Quick setup
 
@@ -21,6 +23,22 @@ This repository contains two complementary pieces:
    ```bash
    source setup.sh
    ```
-3. Use `python replay_sessions.py` or other scripts in the folder to work with your recordings. The helper `sync_supabase_bucket.py` at the repo root can download the entire bucket for offline replay.
+3. Use `python replay_sessions.py` or other scripts in the folder to work with your recordings. The helper `robo-rewind/mirror_bucket.py` can download the entire bucket for offline replay:
+   ```bash
+   python robo-rewind/mirror_bucket.py
+   ```
 
+### Web viewer
+1. Navigate to the web folder:
+   ```bash
+   cd web
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
 For full instructions and advanced usage, read the READMEs in each subdirectory.
