@@ -40,6 +40,10 @@ struct ARPreviewView: UIViewRepresentable {
         init(parent: ARPreviewView) {
             self.parent = parent
             super.init()
+
+            motionQueue.name = "com.roboclip.motionQueue" // Name the queue for easier debugging
+            motionQueue.maxConcurrentOperationCount = 1    // Ensure serial execution of motion updates
+
             session.delegate = self
             // Monitor thermal state changes
             NotificationCenter.default.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main) { _ in
