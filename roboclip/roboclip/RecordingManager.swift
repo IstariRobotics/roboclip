@@ -240,10 +240,12 @@ class RecordingManager {
             let meshURL = dir.appendingPathComponent("mesh.obj")
             do {
                 try exportMesh(to: meshURL)
-                MCP.log("RecordingManager: Wrote mesh to \(meshURL.path)")
+                MCP.log("RecordingManager: Wrote mesh with \(meshAnchors.count) anchors to \(meshURL.path)")
             } catch {
                 MCP.log("RecordingManager: ERROR writing mesh: \(error)")
             }
+        } else if self.outputDirectory != nil {
+            MCP.log("RecordingManager: No mesh anchors collected during recording")
         }
 
         // Save world map if available
@@ -344,14 +346,12 @@ class RecordingManager {
             }
 
             if let frame = session.currentFrame {
-                let meshURL = dir.appendingPathComponent("mesh.obj")
-                let meshAnchors = frame.anchors.compactMap { $0 as? ARMeshAnchor }
-                do {
-                    try self.saveMeshOBJ(anchors: meshAnchors, to: meshURL)
-                    MCP.log("RecordingManager: Saved mesh to \(meshURL.path)")
-                } catch {
-                    MCP.log("RecordingManager: ERROR saving mesh: \(error)")
+                // Add any final mesh anchors that might have been detected
+                let currentMeshAnchors = frame.anchors.compactMap { $0 as? ARMeshAnchor }
+                for anchor in currentMeshAnchors {
+                    addMeshAnchor(anchor)
                 }
+                MCP.log("RecordingManager: Added \(currentMeshAnchors.count) final mesh anchors, total: \(meshAnchors.count)")
             }
         }
 
@@ -675,6 +675,7 @@ class RecordingManager {
     private func saveMeshOBJ(anchors: [ARMeshAnchor], to url: URL) throws {
         var objLines: [String] = []
         var vertexOffset: Int32 = 0
+        
         for anchor in anchors {
             let geometry = anchor.geometry
 
@@ -685,23 +686,42 @@ class RecordingManager {
             for v in 0..<vertexSource.count {
                 let vertex = vertexBuffer[v]
                 let world = anchor.transform * SIMD4<Float>(vertex, 1)
-                objLines.append(String(format: "v %f %f %f", world.x, world.y, world.z))
+                objLines.append(String(format: "v %.6f %.6f %.6f", world.x, world.y, world.z))
             }
 
             // Extract triangle indices from ARGeometryElement buffer
             let faces = geometry.faces
-            let indexBuffer = faces.buffer.contents().bindMemory(to: UInt32.self,
-                                                                 capacity: faces.count * 3)
-            for f in 0..<faces.count {
-                let base = f * 3
-                let i0 = Int32(indexBuffer[base])
-                let i1 = Int32(indexBuffer[base + 1])
-                let i2 = Int32(indexBuffer[base + 2])
-                objLines.append("f \(i0 + 1 + vertexOffset) \(i1 + 1 + vertexOffset) \(i2 + 1 + vertexOffset)")
+            let indexCountPerPrimitive = faces.indexCountPerPrimitive
+            let totalIndices = faces.count * indexCountPerPrimitive
+            
+            // Handle different index types based on bytesPerIndex
+            if faces.bytesPerIndex == 2 {
+                let indexBuffer = faces.buffer.contents().bindMemory(to: UInt16.self, capacity: totalIndices)
+                for f in 0..<faces.count {
+                    let base = f * indexCountPerPrimitive
+                    if indexCountPerPrimitive == 3 {
+                        let i0 = Int32(indexBuffer[base]) + 1 + vertexOffset
+                        let i1 = Int32(indexBuffer[base + 1]) + 1 + vertexOffset
+                        let i2 = Int32(indexBuffer[base + 2]) + 1 + vertexOffset
+                        objLines.append("f \(i0) \(i1) \(i2)")
+                    }
+                }
+            } else if faces.bytesPerIndex == 4 {
+                let indexBuffer = faces.buffer.contents().bindMemory(to: UInt32.self, capacity: totalIndices)
+                for f in 0..<faces.count {
+                    let base = f * indexCountPerPrimitive
+                    if indexCountPerPrimitive == 3 {
+                        let i0 = Int32(indexBuffer[base]) + 1 + vertexOffset
+                        let i1 = Int32(indexBuffer[base + 1]) + 1 + vertexOffset
+                        let i2 = Int32(indexBuffer[base + 2]) + 1 + vertexOffset
+                        objLines.append("f \(i0) \(i1) \(i2)")
+                    }
+                }
             }
 
             vertexOffset += Int32(vertexSource.count)
         }
+        
         let data = objLines.joined(separator: "\n")
         try data.write(to: url, atomically: true, encoding: .utf8)
     }
@@ -710,6 +730,8 @@ class RecordingManager {
 
 
     func addMeshAnchor(_ anchor: ARMeshAnchor) {
+        // Remove any existing anchor with the same identifier to avoid duplicates
+        meshAnchors.removeAll { $0.identifier == anchor.identifier }
         meshAnchors.append(anchor)
     }
 
@@ -718,29 +740,57 @@ class RecordingManager {
     }
 
     private func exportMesh(to url: URL) throws {
-        var obj = ""
-        var currentIndex: UInt32 = 0
+        var objLines: [String] = []
+        var vertexOffset: UInt32 = 0
+        
         for anchor in meshAnchors {
             let geometry = anchor.geometry
             let vertexCount = geometry.vertices.count
             let vertexPointer = geometry.vertices.buffer.contents().bindMemory(to: simd_float3.self, capacity: vertexCount)
+            
+            // Write vertices
             for i in 0..<vertexCount {
                 let vertex = vertexPointer[i]
                 let pos4 = anchor.transform * simd_float4(vertex, 1.0)
                 let worldPos = simd_make_float3(pos4.x, pos4.y, pos4.z)
-                obj += String(format: "v %f %f %f\n", worldPos.x, worldPos.y, worldPos.z)
+                objLines.append(String(format: "v %.6f %.6f %.6f", worldPos.x, worldPos.y, worldPos.z))
             }
-            let indexCount = geometry.faces.count
-            let indexPointer = geometry.faces.buffer.contents().bindMemory(to: UInt32.self, capacity: indexCount)
-            for i in stride(from: 0, to: indexCount, by: 3) {
-                let i0 = currentIndex + indexPointer[i] + 1
-                let i1 = currentIndex + indexPointer[i+1] + 1
-                let i2 = currentIndex + indexPointer[i+2] + 1
-                obj += "f \(i0) \(i1) \(i2)\n"
+            
+            // Write faces
+            let faces = geometry.faces
+            let indexCountPerPrimitive = faces.indexCountPerPrimitive
+            let totalIndices = faces.count * indexCountPerPrimitive
+            
+            // Handle different index types based on bytesPerIndex
+            if faces.bytesPerIndex == 2 {
+                let indexPointer = faces.buffer.contents().bindMemory(to: UInt16.self, capacity: totalIndices)
+                for f in 0..<faces.count {
+                    let base = f * indexCountPerPrimitive
+                    if indexCountPerPrimitive == 3 {
+                        let i0 = vertexOffset + UInt32(indexPointer[base]) + 1
+                        let i1 = vertexOffset + UInt32(indexPointer[base + 1]) + 1
+                        let i2 = vertexOffset + UInt32(indexPointer[base + 2]) + 1
+                        objLines.append("f \(i0) \(i1) \(i2)")
+                    }
+                }
+            } else if faces.bytesPerIndex == 4 {
+                let indexPointer = faces.buffer.contents().bindMemory(to: UInt32.self, capacity: totalIndices)
+                for f in 0..<faces.count {
+                    let base = f * indexCountPerPrimitive
+                    if indexCountPerPrimitive == 3 {
+                        let i0 = vertexOffset + indexPointer[base] + 1
+                        let i1 = vertexOffset + indexPointer[base + 1] + 1
+                        let i2 = vertexOffset + indexPointer[base + 2] + 1
+                        objLines.append("f \(i0) \(i1) \(i2)")
+                    }
+                }
             }
-            currentIndex += UInt32(vertexCount)
+            
+            vertexOffset += UInt32(vertexCount)
         }
-        try obj.write(to: url, atomically: true, encoding: .utf8)
+        
+        let objContent = objLines.joined(separator: "\n")
+        try objContent.write(to: url, atomically: true, encoding: .utf8)
     }
 
     // Helper for scan folder naming

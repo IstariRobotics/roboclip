@@ -184,10 +184,12 @@ class SupabaseUploader: ObservableObject {
                 }
                 allPendingFolders.append(contentsOf: newFolders)
             }
+            
+            // Capture allPendingFolders safely for concurrent access
+            let currentAllFolders = allPendingFolders
             await MainActor.run {
-                let allFolders = allPendingFolders  // Capture locally
-                let completedCount = allFolders.firstIndex(of: folder).map { $0 + 1 } ?? 1
-                self.progress = Double(completedCount) / Double(max(allFolders.count, 1))
+                let completedCount = currentAllFolders.firstIndex(of: folder).map { $0 + 1 } ?? 1
+                self.progress = Double(completedCount) / Double(max(currentAllFolders.count, 1))
             }
         }
     }
