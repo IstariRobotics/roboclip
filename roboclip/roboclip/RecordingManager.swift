@@ -560,10 +560,12 @@ class RecordingManager {
         let arkitTranslation = simd_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
         
         // Coordinate transformation matrix (3x3 rotation only)
+        // ARKit: +X right, +Y up, +Z out (camera views along -Z)
+        // Target Rerun World (+Y up, as set in replay_local_data.py): +X right, +Y up, +Z forward (into scene)
         let coordinateRotation = simd_float3x3(rows: [
-            simd_float3(1.0, 0.0, 0.0),   // Keep +X as right
-            simd_float3(0.0, -1.0, 0.0),  // Flip +Y (up -> down)
-            simd_float3(0.0, 0.0, -1.0)   // Flip +Z (out -> in)
+            simd_float3(1.0, 0.0, 0.0),   // X_target = X_arkit (Right)
+            simd_float3(0.0, 1.0, 0.0),   // Y_target = Y_arkit (Up)
+            simd_float3(0.0, 0.0, -1.0)  // Z_target = -Z_arkit (ARKit +Z out -> Target +Z in)
         ])
         
         // Transform rotation and translation separately
