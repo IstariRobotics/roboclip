@@ -239,10 +239,12 @@ class RecordingManager {
         if let dir = self.outputDirectory, !meshAnchors.isEmpty {
             let meshURL = dir.appendingPathComponent("mesh.obj")
             do {
+                MCP.log("RecordingManager: Attempting to export \(meshAnchors.count) mesh anchors")
                 try exportMesh(to: meshURL)
-                MCP.log("RecordingManager: Wrote mesh with \(meshAnchors.count) anchors to \(meshURL.path)")
+                MCP.log("RecordingManager: Successfully wrote mesh to \(meshURL.path)")
             } catch {
                 MCP.log("RecordingManager: ERROR writing mesh: \(error)")
+                // Continue execution even if mesh export fails
             }
         } else if self.outputDirectory != nil {
             MCP.log("RecordingManager: No mesh anchors collected during recording")
@@ -583,7 +585,7 @@ class RecordingManager {
         )
         
         // Debug translation values - always log for debugging
-        MCP.log("Translation: ARKit=\\\\\\\\(arkitTranslation)") // Removed RDF part
+        MCP.log("Translation: ARKit=\(arkitTranslation)") // Fixed string interpolation
         
         // Convert to array of rows for JSON serialization (row-major order)
         // simd_float4x4 is column-major, so we construct rows manually.
@@ -670,69 +672,20 @@ class RecordingManager {
         // Write as CSV row with header: wall_clock,roll,pitch,yaw,rotX,rotY,rotZ,accX,accY,accZ,gravX,gravY,gravZ
         let row = String(format: "%0.6f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n", wallClock, imu.attitude.roll, imu.attitude.pitch, imu.attitude.yaw, imu.rotationRate.x, imu.rotationRate.y, imu.rotationRate.z, imu.userAcceleration.x, imu.userAcceleration.y, imu.userAcceleration.z, imu.gravity.x, imu.gravity.y, imu.gravity.z)
         handle.write(row.data(using: .utf8)!)
-    }
-
-    private func saveMeshOBJ(anchors: [ARMeshAnchor], to url: URL) throws {
-        var objLines: [String] = []
-        var vertexOffset: Int32 = 0
-        
-        for anchor in anchors {
-            let geometry = anchor.geometry
-
-            // Extract vertices from ARGeometrySource buffer
-            let vertexSource = geometry.vertices
-            let vertexBuffer = vertexSource.buffer.contents().bindMemory(to: SIMD3<Float>.self,
-                                                                        capacity: vertexSource.count)
-            for v in 0..<vertexSource.count {
-                let vertex = vertexBuffer[v]
-                let world = anchor.transform * SIMD4<Float>(vertex, 1)
-                objLines.append(String(format: "v %.6f %.6f %.6f", world.x, world.y, world.z))
-            }
-
-            // Extract triangle indices from ARGeometryElement buffer
-            let faces = geometry.faces
-            let indexCountPerPrimitive = faces.indexCountPerPrimitive
-            let totalIndices = faces.count * indexCountPerPrimitive
-            
-            // Handle different index types based on bytesPerIndex
-            if faces.bytesPerIndex == 2 {
-                let indexBuffer = faces.buffer.contents().bindMemory(to: UInt16.self, capacity: totalIndices)
-                for f in 0..<faces.count {
-                    let base = f * indexCountPerPrimitive
-                    if indexCountPerPrimitive == 3 {
-                        let i0 = Int32(indexBuffer[base]) + 1 + vertexOffset
-                        let i1 = Int32(indexBuffer[base + 1]) + 1 + vertexOffset
-                        let i2 = Int32(indexBuffer[base + 2]) + 1 + vertexOffset
-                        objLines.append("f \(i0) \(i1) \(i2)")
-                    }
-                }
-            } else if faces.bytesPerIndex == 4 {
-                let indexBuffer = faces.buffer.contents().bindMemory(to: UInt32.self, capacity: totalIndices)
-                for f in 0..<faces.count {
-                    let base = f * indexCountPerPrimitive
-                    if indexCountPerPrimitive == 3 {
-                        let i0 = Int32(indexBuffer[base]) + 1 + vertexOffset
-                        let i1 = Int32(indexBuffer[base + 1]) + 1 + vertexOffset
-                        let i2 = Int32(indexBuffer[base + 2]) + 1 + vertexOffset
-                        objLines.append("f \(i0) \(i1) \(i2)")
-                    }
-                }
-            }
-
-            vertexOffset += Int32(vertexSource.count)
-        }
-        
-        let data = objLines.joined(separator: "\n")
-        try data.write(to: url, atomically: true, encoding: .utf8)
-    }
-    
-
-
+    }    
 
     func addMeshAnchor(_ anchor: ARMeshAnchor) {
         // Remove any existing anchor with the same identifier to avoid duplicates
         meshAnchors.removeAll { $0.identifier == anchor.identifier }
-        meshAnchors.append(anchor)
+        
+        // Only add the anchor if it has valid geometry
+        let geometry = anchor.geometry
+        if geometry.vertices.count > 0 && geometry.faces.count > 0 {
+            meshAnchors.append(anchor)
+            MCP.log("RecordingManager: Added mesh anchor \(anchor.identifier) with \(geometry.vertices.count) vertices and \(geometry.faces.count) faces")
+        } else {
+            MCP.log("RecordingManager: Skipped empty mesh anchor \(anchor.identifier)")
+        }
     }
 
     func setWorldMapData(_ data: Data) {
@@ -740,57 +693,86 @@ class RecordingManager {
     }
 
     private func exportMesh(to url: URL) throws {
+        guard !meshAnchors.isEmpty else {
+            MCP.log("RecordingManager: No mesh anchors to export")
+            return
+        }
+        
         var objLines: [String] = []
         var vertexOffset: UInt32 = 0
         
-        for anchor in meshAnchors {
+        MCP.log("RecordingManager: Starting mesh export with \(meshAnchors.count) anchors")
+        
+        for (anchorIndex, anchor) in meshAnchors.enumerated() {
             let geometry = anchor.geometry
             let vertexCount = geometry.vertices.count
+            
+            // Safety check for vertex count
+            guard vertexCount > 0 else {
+                MCP.log("RecordingManager: Anchor \(anchorIndex) has no vertices, skipping")
+                continue
+            }
+            
+            // Safely access vertex buffer
             let vertexPointer = geometry.vertices.buffer.contents().bindMemory(to: simd_float3.self, capacity: vertexCount)
             
-            // Write vertices
+            // Write vertices with bounds checking
             for i in 0..<vertexCount {
-                let vertex = vertexPointer[i]
+                let vertex = vertexPointer.advanced(by: i).pointee
                 let pos4 = anchor.transform * simd_float4(vertex, 1.0)
                 let worldPos = simd_make_float3(pos4.x, pos4.y, pos4.z)
                 objLines.append(String(format: "v %.6f %.6f %.6f", worldPos.x, worldPos.y, worldPos.z))
             }
             
-            // Write faces
+            // Write faces with safety checks
             let faces = geometry.faces
+            let faceCount = faces.count
             let indexCountPerPrimitive = faces.indexCountPerPrimitive
-            let totalIndices = faces.count * indexCountPerPrimitive
+            
+            guard faceCount > 0 && indexCountPerPrimitive == 3 else {
+                MCP.log("RecordingManager: Anchor \(anchorIndex) has \(faceCount) faces with \(indexCountPerPrimitive) indices per primitive, skipping faces")
+                vertexOffset += UInt32(vertexCount)
+                continue
+            }
+            
+            let totalIndices = faceCount * indexCountPerPrimitive
             
             // Handle different index types based on bytesPerIndex
             if faces.bytesPerIndex == 2 {
                 let indexPointer = faces.buffer.contents().bindMemory(to: UInt16.self, capacity: totalIndices)
-                for f in 0..<faces.count {
+                
+                for f in 0..<faceCount {
                     let base = f * indexCountPerPrimitive
-                    if indexCountPerPrimitive == 3 {
-                        let i0 = vertexOffset + UInt32(indexPointer[base]) + 1
-                        let i1 = vertexOffset + UInt32(indexPointer[base + 1]) + 1
-                        let i2 = vertexOffset + UInt32(indexPointer[base + 2]) + 1
-                        objLines.append("f \(i0) \(i1) \(i2)")
-                    }
+                    let i0 = vertexOffset + UInt32(indexPointer.advanced(by: base).pointee) + 1
+                    let i1 = vertexOffset + UInt32(indexPointer.advanced(by: base + 1).pointee) + 1
+                    let i2 = vertexOffset + UInt32(indexPointer.advanced(by: base + 2).pointee) + 1
+                    objLines.append("f \(i0) \(i1) \(i2)")
                 }
             } else if faces.bytesPerIndex == 4 {
                 let indexPointer = faces.buffer.contents().bindMemory(to: UInt32.self, capacity: totalIndices)
-                for f in 0..<faces.count {
+                
+                for f in 0..<faceCount {
                     let base = f * indexCountPerPrimitive
-                    if indexCountPerPrimitive == 3 {
-                        let i0 = vertexOffset + indexPointer[base] + 1
-                        let i1 = vertexOffset + indexPointer[base + 1] + 1
-                        let i2 = vertexOffset + indexPointer[base + 2] + 1
-                        objLines.append("f \(i0) \(i1) \(i2)")
-                    }
+                    let i0 = vertexOffset + indexPointer.advanced(by: base).pointee + 1
+                    let i1 = vertexOffset + indexPointer.advanced(by: base + 1).pointee + 1
+                    let i2 = vertexOffset + indexPointer.advanced(by: base + 2).pointee + 1
+                    objLines.append("f \(i0) \(i1) \(i2)")
                 }
+            } else {
+                MCP.log("RecordingManager: Unsupported index size \(faces.bytesPerIndex) bytes for anchor \(anchorIndex)")
             }
             
             vertexOffset += UInt32(vertexCount)
+            MCP.log("RecordingManager: Processed anchor \(anchorIndex): \(vertexCount) vertices, \(faceCount) faces")
+        }
+        
+        guard !objLines.isEmpty else {
+            throw NSError(domain: "RecordingManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No valid mesh data to export"])
         }
         
         let objContent = objLines.joined(separator: "\n")
         try objContent.write(to: url, atomically: true, encoding: .utf8)
+        MCP.log("RecordingManager: Successfully exported mesh with \(objLines.filter { $0.hasPrefix("v ") }.count) vertices and \(objLines.filter { $0.hasPrefix("f ") }.count) faces")
     }
 
     // Helper for scan folder naming
