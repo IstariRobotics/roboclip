@@ -548,8 +548,8 @@ class RecordingManager {
         
         // Apply coordinate system transformation from ARKit to visualization coordinate system
         // ARKit: +X right, +Y up, +Z out of screen (toward user)
-        // Visualization: +X right, +Y down, +Z into scene (away from user) 
-        // This transformation rotates 180 degrees around X-axis to flip Y and Z axes
+        // Visualization RDF (Rerun default): +X right, +Y down, +Z into scene (away from user) 
+        // This transformation rotates 180 degrees around X-axis to flip Y and Z axes.
         
         // Extract rotation (upper-left 3x3) and translation (4th column) separately
         let arkitRotation = simd_float3x3(
@@ -559,30 +559,31 @@ class RecordingManager {
         )
         let arkitTranslation = simd_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
         
-        // Coordinate transformation matrix (3x3 rotation only)
-        // ARKit: +X right, +Y up, +Z out (camera views along -Z)
-        // Target Rerun World (+Y up, as set in replay_local_data.py): +X right, +Y up, +Z forward (into scene)
-        let coordinateRotation = simd_float3x3(rows: [
-            simd_float3(1.0, 0.0, 0.0),   // X_target = X_arkit (Right)
-            simd_float3(0.0, 1.0, 0.0),   // Y_target = Y_arkit (Up)
-            simd_float3(0.0, 0.0, -1.0)  // Z_target = -Z_arkit (ARKit +Z out -> Target +Z in)
-        ])
+        // Rotation matrix for 180 degrees around X-axis
+        // X_rdf = X_arkit
+        // Y_rdf = -Y_arkit
+        // Z_rdf = -Z_arkit
+        // let arkitToRDFRotation = simd_float3x3(rows: [
+        //     simd_float3(1.0,  0.0,  0.0),
+        //     simd_float3(0.0, -1.0,  0.0),
+        //     simd_float3(0.0,  0.0, -1.0)
+        // ])
         
-        // Transform rotation and translation separately
-        let transformedRotation = coordinateRotation * arkitRotation
-        let transformedTranslation = coordinateRotation * arkitTranslation
+        // Apply the transformation
+        // let rdfRotation = arkitToRDFRotation * arkitRotation
+        // let rdfTranslation = arkitToRDFRotation * arkitTranslation
         
         // Reconstruct the 4x4 matrix with transformed components
+        // Use original arkitRotation and arkitTranslation
         let transformedMatrix = simd_float4x4(
-            simd_float4(transformedRotation.columns.0, 0.0),
-            simd_float4(transformedRotation.columns.1, 0.0),
-            simd_float4(transformedRotation.columns.2, 0.0),
-            simd_float4(transformedTranslation, 1.0)
+            simd_float4(arkitRotation.columns.0, 0.0),
+            simd_float4(arkitRotation.columns.1, 0.0),
+            simd_float4(arkitRotation.columns.2, 0.0),
+            simd_float4(arkitTranslation, 1.0)
         )
         
         // Debug translation values - always log for debugging
-        MCP.log("Translation: ARKit=\(arkitTranslation) -> Transformed=\(transformedTranslation)")
-        MCP.log("Matrix column 3: [\\\\(transformedMatrix.columns.3.x), \\\\(transformedMatrix.columns.3.y), \\\\(transformedMatrix.columns.3.z), \\\\(transformedMatrix.columns.3.w)]")
+        MCP.log("Translation: ARKit=\\\\\\\\(arkitTranslation)") // Removed RDF part
         
         // Convert to array of rows for JSON serialization (row-major order)
         // simd_float4x4 is column-major, so we construct rows manually.
