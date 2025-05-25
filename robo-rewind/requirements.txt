@@ -1,5 +1,4 @@
-requests
+rerun
 numpy
-rerun-sdk
-supabase
+scipy
 opencv-python
