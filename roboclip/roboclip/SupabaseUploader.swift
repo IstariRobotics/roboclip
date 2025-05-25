@@ -153,12 +153,14 @@ class SupabaseUploader: ObservableObject {
     }
 
     private func uploadAllRecordings() async {
-        var pendingFolders = scanPendingFolders()
+        let initialPendingFolders = scanPendingFolders()
         await MainActor.run {
-            self.sessionStatuses = pendingFolders.map { SessionStatus(id: UUID(), folderURL: $0, progress: 0.0) }
+            self.sessionStatuses = initialPendingFolders.map { SessionStatus(id: UUID(), folderURL: $0, progress: 0.0) }
         }
-        var foldersToUpload = pendingFolders
+        var foldersToUpload = initialPendingFolders
         var uploadedFolders: Set<URL> = []
+        var allPendingFolders = initialPendingFolders
+        
         while !foldersToUpload.isEmpty {
             let folder = foldersToUpload.removeFirst()
             await MainActor.run {
@@ -169,9 +171,10 @@ class SupabaseUploader: ObservableObject {
             }
             await uploadRecordingFolder(folder, sessionID: sessionID)
             uploadedFolders.insert(folder)
+            
             // After upload, check for new folders
             let currentPendingFolders = scanPendingFolders()
-            let newFolders = currentPendingFolders.filter { !pendingFolders.contains($0) && !uploadedFolders.contains($0) && !foldersToUpload.contains($0) }
+            let newFolders = currentPendingFolders.filter { !allPendingFolders.contains($0) && !uploadedFolders.contains($0) && !foldersToUpload.contains($0) }
             if !newFolders.isEmpty {
                 foldersToUpload.append(contentsOf: newFolders)
                 await MainActor.run {
@@ -179,11 +182,11 @@ class SupabaseUploader: ObservableObject {
                         self.sessionStatuses.append(SessionStatus(id: UUID(), folderURL: newFolder, progress: 0.0))
                     }
                 }
-                pendingFolders.append(contentsOf: newFolders)
+                allPendingFolders.append(contentsOf: newFolders)
             }
             await MainActor.run {
-                let completedCount = pendingFolders.firstIndex(of: folder).map { $0 + 1 } ?? 1
-                self.progress = Double(completedCount) / Double(max(pendingFolders.count, 1))
+                let completedCount = allPendingFolders.firstIndex(of: folder).map { $0 + 1 } ?? 1
+                self.progress = Double(completedCount) / Double(max(allPendingFolders.count, 1))
             }
         }
     }

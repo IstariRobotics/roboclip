@@ -36,6 +36,8 @@ class RecordingManager {
     private var audioRecorder: AVAudioRecorder?
     private var meshAnchors: [ARMeshAnchor] = []
     private var worldMapData: Data?
+    private var lastCameraPosition: simd_float3?
+    private var totalCameraMovement: Float = 0.0
 
     func setCameraIntrinsics(_ m: simd_float3x3, imageResolution: CGSize) {
         cameraIntrinsics = m
@@ -177,6 +179,8 @@ class RecordingManager {
         }
         cameraPoses = []
         meshAnchors = []
+        lastCameraPosition = nil
+        totalCameraMovement = 0.0
         isRecording = true
         MCP.log("RecordingManager: Created scan directory at \(dir.path). isRecording = true.")
         if let currentFrame = session.currentFrame {
@@ -226,7 +230,8 @@ class RecordingManager {
             let posesURL = dir.appendingPathComponent("camera_poses.json")
             if let data = try? JSONSerialization.data(withJSONObject: cameraPoses, options: .prettyPrinted) {
                 try? data.write(to: posesURL)
-                MCP.log("RecordingManager: Wrote camera poses to \(posesURL.path)")
+                MCP.log("RecordingManager: Wrote \(cameraPoses.count) camera poses to \(posesURL.path)")
+                MCP.log("RecordingManager: Total camera movement during recording: \(totalCameraMovement)m")
             }
         }
 
@@ -524,11 +529,60 @@ class RecordingManager {
         } else {
             wallClock = Date().timeIntervalSince1970
         }
+        
+        // Debug: Log the transform values to see what we're getting
+        let translation = transform.columns.3
+        let position = simd_float3(translation.x, translation.y, translation.z)
+        
+        // Track total camera movement to diagnose position tracking
+        if let lastPos = lastCameraPosition {
+            let movement = simd_distance(position, lastPos)
+            totalCameraMovement += movement
+            if movement > 0.001 { // Only log significant movements
+                MCP.log("RecordingManager: Camera moved \(movement)m, total movement: \(totalCameraMovement)m")
+            }
+        } else {
+            MCP.log("RecordingManager: First camera pose - position=\(position)")
+        }
+        lastCameraPosition = position
+        
+        // Apply coordinate system transformation from ARKit to visualization coordinate system
+        // ARKit: +X right, +Y up, +Z out of screen (toward user)
+        // Visualization: +X right, +Y down, +Z into scene (away from user) 
+        // This transformation rotates 180 degrees around X-axis to flip Y and Z axes
+        
+        // Extract rotation (upper-left 3x3) and translation (4th column) separately
+        let arkitRotation = simd_float3x3(
+            simd_float3(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z),
+            simd_float3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z),
+            simd_float3(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z)
+        )
+        let arkitTranslation = simd_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+        
+        // Coordinate transformation matrix (3x3 rotation only)
+        let coordinateRotation = simd_float3x3(rows: [
+            simd_float3(1.0, 0.0, 0.0),   // Keep +X as right
+            simd_float3(0.0, -1.0, 0.0),  // Flip +Y (up -> down)
+            simd_float3(0.0, 0.0, -1.0)   // Flip +Z (out -> in)
+        ])
+        
+        // Transform rotation and translation separately
+        let transformedRotation = coordinateRotation * arkitRotation
+        let transformedTranslation = coordinateRotation * arkitTranslation
+        
+        // Reconstruct the 4x4 matrix with transformed components
+        let transformedMatrix = simd_float4x4(
+            simd_float4(transformedRotation.columns.0, 0.0),
+            simd_float4(transformedRotation.columns.1, 0.0),
+            simd_float4(transformedRotation.columns.2, 0.0),
+            simd_float4(transformedTranslation, 1.0)
+        )
+        
         let matrix: [[Float]] = [
-            [transform.columns.0.x, transform.columns.0.y, transform.columns.0.z, transform.columns.0.w],
-            [transform.columns.1.x, transform.columns.1.y, transform.columns.1.z, transform.columns.1.w],
-            [transform.columns.2.x, transform.columns.2.y, transform.columns.2.z, transform.columns.2.w],
-            [transform.columns.3.x, transform.columns.3.y, transform.columns.3.z, transform.columns.3.w]
+            [transformedMatrix.columns.0.x, transformedMatrix.columns.0.y, transformedMatrix.columns.0.z, transformedMatrix.columns.0.w],
+            [transformedMatrix.columns.1.x, transformedMatrix.columns.1.y, transformedMatrix.columns.1.z, transformedMatrix.columns.1.w],
+            [transformedMatrix.columns.2.x, transformedMatrix.columns.2.y, transformedMatrix.columns.2.z, transformedMatrix.columns.2.w],
+            [transformedMatrix.columns.3.x, transformedMatrix.columns.3.y, transformedMatrix.columns.3.z, transformedMatrix.columns.3.w]
         ]
         cameraPoses.append(["timestamp": wallClock, "matrix": matrix])
     }
@@ -639,16 +693,7 @@ class RecordingManager {
     }
     
 
-    func appendCameraPose(transform: simd_float4x4, timestamp: TimeInterval) {
-        guard isRecording else { return }
-        let matrix: [[Float]] = [
-            [transform.columns.0.x, transform.columns.0.y, transform.columns.0.z, transform.columns.0.w],
-            [transform.columns.1.x, transform.columns.1.y, transform.columns.1.z, transform.columns.1.w],
-            [transform.columns.2.x, transform.columns.2.y, transform.columns.2.z, transform.columns.2.w],
-            [transform.columns.3.x, transform.columns.3.y, transform.columns.3.z, transform.columns.3.w]
-        ]
-        cameraPoses.append(["timestamp": timestamp, "matrix": matrix])
-    }
+
 
     func addMeshAnchor(_ anchor: ARMeshAnchor) {
         meshAnchors.append(anchor)

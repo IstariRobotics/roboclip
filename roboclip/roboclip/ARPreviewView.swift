@@ -89,6 +89,10 @@ struct ARPreviewView: UIViewRepresentable {
         func startSession() {
             let config = ARWorldTrackingConfiguration()
             config.frameSemantics = [.sceneDepth, .smoothedSceneDepth]
+            
+            // Enable plane detection to help establish world coordinate system
+            config.planeDetection = [.horizontal, .vertical]
+            
             if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
                 config.sceneReconstruction = .mesh
             } else {
@@ -97,8 +101,10 @@ struct ARPreviewView: UIViewRepresentable {
             if let videoFormat = ARWorldTrackingConfiguration.recommendedVideoFormatForHighResolutionFrameCapturing {
                 config.videoFormat = videoFormat
             }
-            session.run(config, options: [.resetTracking, .removeExistingAnchors])
-            MCP.log("ARKit session started with sceneDepth, mesh reconstruction, and high-res video.")
+            
+            // Use less aggressive reset options to preserve world tracking
+            session.run(config, options: [.removeExistingAnchors])
+            MCP.log("ARKit session started with sceneDepth, mesh reconstruction, plane detection, and high-res video.")
         }
         
         func startRecording() {
@@ -138,7 +144,29 @@ struct ARPreviewView: UIViewRepresentable {
         }
         
         func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
-            MCP.log("ARKit camera tracking state: \(camera.trackingState)")
+            let stateString: String
+            switch camera.trackingState {
+            case .normal:
+                stateString = "normal"
+            case .limited(let reason):
+                switch reason {
+                case .excessiveMotion:
+                    stateString = "limited(excessiveMotion)"
+                case .insufficientFeatures:
+                    stateString = "limited(insufficientFeatures)"
+                case .initializing:
+                    stateString = "limited(initializing)"
+                case .relocalizing:
+                    stateString = "limited(relocalizing)"
+                @unknown default:
+                    stateString = "limited(unknown)"
+                }
+            case .notAvailable:
+                stateString = "notAvailable"
+            @unknown default:
+                stateString = "unknown"
+            }
+            MCP.log("ARKit camera tracking state changed to: \(stateString)")
         }
 
         // ARSessionDelegate: called every frame
@@ -163,8 +191,13 @@ struct ARPreviewView: UIViewRepresentable {
                     self.syncedFrames.removeFirst()
                 }
                 let depthStatus = frame.sceneDepth != nil ? "depth=present" : "depth=absent"
+                
+                // Debug camera position
+                let translation = cameraTransform.columns.3
+                let position = simd_float3(translation.x, translation.y, translation.z)
+                
                 DispatchQueue.main.async {
-                    MCP.log("Frame: t=\(timestamp), \(depthStatus), pose=\(cameraTransform.columns.3)")
+                    MCP.log("Frame: t=\(timestamp), \(depthStatus), pose=\(cameraTransform.columns.3), trackingState=\(frame.camera.trackingState), position=\(position)")
                 }
                 if self.cameraIntrinsics == nil {
                     self.cameraIntrinsics = frame.camera.intrinsics
@@ -181,7 +214,7 @@ struct ARPreviewView: UIViewRepresentable {
                             // Use depth.depthMap for CVPixelBuffer and add timestamp
                             self.recordingManager?.appendDepthData(depthData: depth.depthMap, timestamp: frame.timestamp)
                         }
-                        self.recordingManager?.appendCameraPose(transform: cameraTransform, timestamp: frame.timestamp)
+                        self.recordingManager?.appendCameraPose(cameraTransform, timestamp: frame.timestamp)
                     }
                 }
             }
