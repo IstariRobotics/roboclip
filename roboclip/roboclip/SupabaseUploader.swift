@@ -185,8 +185,9 @@ class SupabaseUploader: ObservableObject {
                 allPendingFolders.append(contentsOf: newFolders)
             }
             await MainActor.run {
-                let completedCount = allPendingFolders.firstIndex(of: folder).map { $0 + 1 } ?? 1
-                self.progress = Double(completedCount) / Double(max(allPendingFolders.count, 1))
+                let allFolders = allPendingFolders  // Capture locally
+                let completedCount = allFolders.firstIndex(of: folder).map { $0 + 1 } ?? 1
+                self.progress = Double(completedCount) / Double(max(allFolders.count, 1))
             }
         }
     }

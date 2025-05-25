@@ -578,11 +578,22 @@ class RecordingManager {
             simd_float4(transformedTranslation, 1.0)
         )
         
+        // Debug translation values - always log for debugging
+        MCP.log("Translation: ARKit=\(arkitTranslation) -> Transformed=\(transformedTranslation)")
+        MCP.log("Matrix column 3: [\\\\(transformedMatrix.columns.3.x), \\\\(transformedMatrix.columns.3.y), \\\\(transformedMatrix.columns.3.z), \\\\(transformedMatrix.columns.3.w)]")
+        
+        // Convert to array of rows for JSON serialization (row-major order)
+        // simd_float4x4 is column-major, so we construct rows manually.
+        let c0 = transformedMatrix.columns.0
+        let c1 = transformedMatrix.columns.1
+        let c2 = transformedMatrix.columns.2
+        let c3 = transformedMatrix.columns.3
+        
         let matrix: [[Float]] = [
-            [transformedMatrix.columns.0.x, transformedMatrix.columns.0.y, transformedMatrix.columns.0.z, transformedMatrix.columns.0.w],
-            [transformedMatrix.columns.1.x, transformedMatrix.columns.1.y, transformedMatrix.columns.1.z, transformedMatrix.columns.1.w],
-            [transformedMatrix.columns.2.x, transformedMatrix.columns.2.y, transformedMatrix.columns.2.z, transformedMatrix.columns.2.w],
-            [transformedMatrix.columns.3.x, transformedMatrix.columns.3.y, transformedMatrix.columns.3.z, transformedMatrix.columns.3.w]
+            [c0.x, c1.x, c2.x, c3.x], // Row 0
+            [c0.y, c1.y, c2.y, c3.y], // Row 1
+            [c0.z, c1.z, c2.z, c3.z], // Row 2
+            [c0.w, c1.w, c2.w, c3.w]  // Row 3
         ]
         cameraPoses.append(["timestamp": wallClock, "matrix": matrix])
     }
