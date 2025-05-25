@@ -36,16 +36,14 @@ struct HomeView: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Uploads")
                                     .font(.title3.bold())
-                                    .padding(.leading, 4)
                                 ForEach(uploader.sessionStatuses) { session in
                                     UploadRow(session: session)
-                                        .padding(.horizontal, 2)
                                 }
                             }
                             .padding(.horizontal)
                         }
                     }
-                    .padding(.top, 8)
+                    .padding(.vertical)
                 }
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
