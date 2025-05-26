@@ -38,6 +38,7 @@ class SupabaseUploader: ObservableObject {
     private var client: SupabaseClient
     private var uploadTask: Task<Void, Never>? = nil
     private var isRecording: Bool = false
+    private var isDeletingSession: Bool = false // Flag to track when deletion is in progress
     private var cancellables = Set<AnyCancellable>()
     private var uploadStartTime: Date? = nil
 
@@ -77,7 +78,7 @@ class SupabaseUploader: ObservableObject {
 
     func setIsRecording(_ recording: Bool) {
         isRecording = recording
-        if !recording {
+        if !recording && !isDeletingSession {
             Task { [weak self] in
                 // Give the recording manager a moment to finish writing files
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -321,6 +322,59 @@ class SupabaseUploader: ObservableObject {
         private var value: Int = 0
         func increment() { value += 1 }
         func get() -> Int { value }
+    }
+
+    /// Delete the most recent recording session folder (used when user chooses to delete recording)
+    func deleteLastRecordingSession() {
+        Task {
+            await MainActor.run {
+                self.isDeletingSession = true
+            }
+            
+            let fileManager = FileManager.default
+            let tempDir = fileManager.temporaryDirectory
+            
+            // Find all Scan-* folders
+            let scanFolders = (try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.creationDateKey], options: .skipsHiddenFiles))?
+                .filter { $0.lastPathComponent.hasPrefix("Scan-") && $0.hasDirectoryPath } ?? []
+            
+            // Sort by creation date to find the most recent
+            let sortedFolders = scanFolders.sorted { folder1, folder2 in
+                let date1 = (try? folder1.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
+                let date2 = (try? folder2.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
+                return date1 > date2 // Most recent first
+            }
+            
+            if let mostRecentFolder = sortedFolders.first {
+                do {
+                    try fileManager.removeItem(at: mostRecentFolder)
+                    await MainActor.run {
+                        AppLogger.log("Deleted recording session: \(mostRecentFolder.lastPathComponent)")
+                        self.statusText = "Recording deleted"
+                        // Remove from sessionStatuses if it exists
+                        self.sessionStatuses.removeAll { $0.folderURL == mostRecentFolder }
+                    }
+                } catch {
+                    await MainActor.run {
+                        AppLogger.log("Failed to delete recording session: \(mostRecentFolder.lastPathComponent), error: \(error)")
+                        self.statusText = "Failed to delete recording"
+                    }
+                }
+            } else {
+                await MainActor.run {
+                    AppLogger.log("No recording session found to delete")
+                    self.statusText = "No recording to delete"
+                }
+            }
+            
+            // Clear deletion flag and refresh UI on main actor
+            await MainActor.run {
+                self.isDeletingSession = false
+            }
+            
+            // Refresh pending uploads after deletion to update UI
+            refreshPendingUploads()
+        }
     }
 
     func clearUploadCache() {

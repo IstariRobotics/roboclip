@@ -6,10 +6,12 @@
 //
 
 import SwiftUI
-import SwiftData
+// import SwiftData
 
 @main
 struct roboclipApp: App {
+    // Temporarily comment out SwiftData to resolve build issues
+    /*
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
@@ -22,10 +24,12 @@ struct roboclipApp: App {
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
+    */
 
+    // Initialize AuthManager and SupabaseUploader  
     @StateObject private var authManager = AuthManager()
     @StateObject private var uploader: SupabaseUploader
-
+    
     init() {
         let authManager = AuthManager()
         _authManager = StateObject(wrappedValue: authManager)
@@ -34,10 +38,10 @@ struct roboclipApp: App {
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            HomeView() // Use HomeView with proper navigation
                 .environmentObject(uploader)
                 .environmentObject(authManager)
         }
-        .modelContainer(sharedModelContainer)
+        // .modelContainer(sharedModelContainer)
     }
 }

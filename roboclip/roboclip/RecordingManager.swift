@@ -43,14 +43,14 @@ class RecordingManager {
         cameraIntrinsics = m
         self.imageWidth = Int(imageResolution.width)
         self.imageHeight = Int(imageResolution.height)
-        MCP.log("RecordingManager: Intrinsics and image resolution set - ImageSize: \(self.imageWidth)x\(self.imageHeight)")
+        AppLogger.log("RecordingManager: Intrinsics and image resolution set - ImageSize: \(self.imageWidth)x\(self.imageHeight)")
     }
     
     func startRecording(arSession session: ARSession) {
-        MCP.log("RecordingManager.startRecording() called")
+        AppLogger.log("RecordingManager.startRecording() called")
         isRecording = false
         let fileManager = FileManager.default
-        MCP.log("RecordingManager temp dir: \(fileManager.temporaryDirectory.path)")
+        AppLogger.log("RecordingManager temp dir: \(fileManager.temporaryDirectory.path)")
         let timestamp = RecordingManager.scanFolderDateFormatter.string(from: Date())
         let dir = fileManager.temporaryDirectory.appendingPathComponent("Scan-\(timestamp)")
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -67,14 +67,14 @@ class RecordingManager {
             AVAudioApplication.requestRecordPermission { granted in
                 DispatchQueue.main.async {
                     if !granted {
-                        MCP.log("RecordingManager: Microphone permission denied.")
+                        AppLogger.log("RecordingManager: Microphone permission denied.")
                         return
                     }
                     do {
                         try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
                         try audioSession.setActive(true)
                     } catch {
-                        MCP.log("RecordingManager: ERROR setting up AVAudioSession: \(error)")
+                        AppLogger.log("RecordingManager: ERROR setting up AVAudioSession: \(error)")
                         return
                     }
                     self.startRecordingInternal(dir: dir, session: session)
@@ -84,14 +84,14 @@ class RecordingManager {
             audioSession.requestRecordPermission { granted in
                 DispatchQueue.main.async {
                     if !granted {
-                        MCP.log("RecordingManager: Microphone permission denied.")
+                        AppLogger.log("RecordingManager: Microphone permission denied.")
                         return
                     }
                     do {
                         try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
                         try audioSession.setActive(true)
                     } catch {
-                        MCP.log("RecordingManager: ERROR setting up AVAudioSession: \(error)")
+                        AppLogger.log("RecordingManager: ERROR setting up AVAudioSession: \(error)")
                         return
                     }
                     self.startRecordingInternal(dir: dir, session: session)
@@ -107,11 +107,11 @@ class RecordingManager {
         do {
             assetWriter = try AVAssetWriter(url: videoURL, fileType: .mov)
         } catch {
-            MCP.log("RecordingManager: ERROR - Failed to initialize AVAssetWriter: \(error.localizedDescription)")
+            AppLogger.log("RecordingManager: ERROR - Failed to initialize AVAssetWriter: \(error.localizedDescription)")
             return
         }
         guard let strongAssetWriter = assetWriter else {
-            MCP.log("RecordingManager: ERROR - assetWriter is nil after init attempt.")
+            AppLogger.log("RecordingManager: ERROR - assetWriter is nil after init attempt.")
             return
         }
         let settings: [String: Any] = [
@@ -121,14 +121,14 @@ class RecordingManager {
         ]
         videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         guard let strongVideoInput = videoInput else {
-            MCP.log("RecordingManager: ERROR - videoInput is nil after init attempt.")
+            AppLogger.log("RecordingManager: ERROR - videoInput is nil after init attempt.")
             assetWriter = nil
             return
         }
         if strongAssetWriter.canAdd(strongVideoInput) {
             strongAssetWriter.add(strongVideoInput)
         } else {
-            MCP.log("RecordingManager: ERROR - Cannot add videoInput to assetWriter.")
+            AppLogger.log("RecordingManager: ERROR - Cannot add videoInput to assetWriter.")
             videoInput = nil
             assetWriter = nil
             return
@@ -142,19 +142,19 @@ class RecordingManager {
         pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: strongVideoInput, sourcePixelBufferAttributes: attrs)
         CVPixelBufferPoolCreate(nil, nil, attrs as CFDictionary, &pixelBufferPool)
         if !strongAssetWriter.startWriting() {
-            MCP.log("RecordingManager: ERROR - assetWriter.startWriting() failed. Status: \(strongAssetWriter.status.rawValue). Error: \(strongAssetWriter.error?.localizedDescription ?? "Unknown error")")
+            AppLogger.log("RecordingManager: ERROR - assetWriter.startWriting() failed. Status: \(strongAssetWriter.status.rawValue). Error: \(strongAssetWriter.error?.localizedDescription ?? "Unknown error")")
             videoInput = nil
             assetWriter = nil
             return
         }
         strongAssetWriter.startSession(atSourceTime: .zero)
         if strongAssetWriter.status == .failed {
-             MCP.log("RecordingManager: assetWriter status is FAILED after startWriting/startSession. Error: \(strongAssetWriter.error?.localizedDescription ?? "Unknown error")")
+             AppLogger.log("RecordingManager: assetWriter status is FAILED after startWriting/startSession. Error: \(strongAssetWriter.error?.localizedDescription ?? "Unknown error")")
              videoInput = nil
              assetWriter = nil
              return
         }
-        MCP.log("RecordingManager: AVAssetWriter started successfully.")
+        AppLogger.log("RecordingManager: AVAssetWriter started successfully.")
         // Depth
         let depthDir = dir.appendingPathComponent("depth")
         try? FileManager.default.createDirectory(at: depthDir, withIntermediateDirectories: true)
@@ -174,18 +174,20 @@ class RecordingManager {
             audioRecorder?.prepareToRecord()
             audioRecorder?.record()
         } catch {
-            MCP.log("RecordingManager: ERROR starting audio recorder: \(error)")
+            AppLogger.log("RecordingManager: ERROR starting audio recorder: \(error)")
             audioRecorder = nil
         }
         cameraPoses = []
         meshAnchors = []
         lastCameraPosition = nil
         totalCameraMovement = 0.0
+        
         isRecording = true
-        MCP.log("RecordingManager: Created scan directory at \(dir.path). isRecording = true.")
+        AppLogger.log("RecordingManager: Created scan directory at \(dir.path). isRecording = true.")
         if let currentFrame = session.currentFrame {
             self.sessionStartWallClock = Date().timeIntervalSince1970
             self.sessionStartARKitTimestamp = currentFrame.timestamp
+            
             let depthMap = currentFrame.sceneDepth?.depthMap ?? currentFrame.smoothedSceneDepth?.depthMap
             if let validDepthMap = depthMap {
                 self.depthWidth = CVPixelBufferGetWidth(validDepthMap)
@@ -194,6 +196,7 @@ class RecordingManager {
             } else {
                 print("RecordingManager: Could not get depth map from current ARFrame at start of recording.")
             }
+            
             if self.imageWidth == 0 || self.imageHeight == 0 {
                  self.imageWidth = Int(currentFrame.camera.imageResolution.width)
                  self.imageHeight = Int(currentFrame.camera.imageResolution.height)
@@ -205,9 +208,9 @@ class RecordingManager {
     }
     
     func stopRecording(completion: (() -> Void)? = nil) {
-        MCP.log("RecordingManager: stopRecording called. Current isRecording state: \(isRecording)")
+        AppLogger.log("RecordingManager: stopRecording called. Current isRecording state: \(isRecording)")
         if !isRecording && assetWriter == nil {
-            MCP.log("RecordingManager: stopRecording - recording was not active or already stopped, and assetWriter is nil. Calling completion.")
+            AppLogger.log("RecordingManager: stopRecording - recording was not active or already stopped, and assetWriter is nil. Calling completion.")
             completion?()
             return
         }
@@ -215,23 +218,23 @@ class RecordingManager {
         recordingStartTime = nil
         
         videoInput?.markAsFinished()
-        MCP.log("RecordingManager: videoInput marked as finished.")
-
+        AppLogger.log("RecordingManager: videoInput marked as finished.")
+        
         audioRecorder?.stop()
         audioRecorder = nil
 
         // Close file handles first
         depthFileHandle?.closeFile()
         imuFileHandle?.closeFile()
-        MCP.log("RecordingManager: Closed depth and IMU file handles.")
+        AppLogger.log("RecordingManager: Closed depth and IMU file handles.")
 
         // Save camera poses if any
         if let dir = self.outputDirectory, !cameraPoses.isEmpty {
             let posesURL = dir.appendingPathComponent("camera_poses.json")
             if let data = try? JSONSerialization.data(withJSONObject: cameraPoses, options: .prettyPrinted) {
                 try? data.write(to: posesURL)
-                MCP.log("RecordingManager: Wrote \(cameraPoses.count) camera poses to \(posesURL.path)")
-                MCP.log("RecordingManager: Total camera movement during recording: \(totalCameraMovement)m")
+                AppLogger.log("RecordingManager: Wrote \(cameraPoses.count) camera poses to \(posesURL.path)")
+                AppLogger.log("RecordingManager: Total camera movement during recording: \(totalCameraMovement)m")
             }
         }
 
@@ -239,15 +242,15 @@ class RecordingManager {
         if let dir = self.outputDirectory, !meshAnchors.isEmpty {
             let meshURL = dir.appendingPathComponent("mesh.obj")
             do {
-                MCP.log("RecordingManager: Attempting to export \(meshAnchors.count) mesh anchors")
+                AppLogger.log("RecordingManager: Attempting to export \(meshAnchors.count) mesh anchors")
                 try exportMesh(to: meshURL)
-                MCP.log("RecordingManager: Successfully wrote mesh to \(meshURL.path)")
+                AppLogger.log("RecordingManager: Successfully wrote mesh to \(meshURL.path)")
             } catch {
-                MCP.log("RecordingManager: ERROR writing mesh: \(error)")
+                AppLogger.log("RecordingManager: ERROR writing mesh: \(error)")
                 // Continue execution even if mesh export fails
             }
         } else if self.outputDirectory != nil {
-            MCP.log("RecordingManager: No mesh anchors collected during recording")
+            AppLogger.log("RecordingManager: No mesh anchors collected during recording")
         }
 
         // Save world map if available
@@ -255,9 +258,9 @@ class RecordingManager {
             let mapURL = dir.appendingPathComponent("world_map.bin")
             do {
                 try mapData.write(to: mapURL)
-                MCP.log("RecordingManager: Wrote world map to \(mapURL.path)")
+                AppLogger.log("RecordingManager: Wrote world map to \(mapURL.path)")
             } catch {
-                MCP.log("RecordingManager: ERROR writing world map: \(error)")
+                AppLogger.log("RecordingManager: ERROR writing world map: \(error)")
             }
         }
 
@@ -291,19 +294,19 @@ class RecordingManager {
                 meta["cx"] = intrinsics.columns.2.x
                 meta["cy"] = intrinsics.columns.2.y
             } else {
-                MCP.log("RecordingManager: WARNING - cameraIntrinsics are nil when writing meta.json.")
+                AppLogger.log("RecordingManager: WARNING - cameraIntrinsics are nil when writing meta.json.")
             }
 
             if let data = try? JSONSerialization.data(withJSONObject: meta, options: .prettyPrinted) {
                 do {
                     try data.write(to: metaURL)
-                    MCP.log("RecordingManager: Wrote meta.json to \(metaURL.path)")
+                    AppLogger.log("RecordingManager: Wrote meta.json to \(metaURL.path)")
                 } catch {
-                    MCP.log("RecordingManager: ERROR writing meta.json: \(error)")
+                    AppLogger.log("RecordingManager: ERROR writing meta.json: \(error)")
                 }
             }
         } else {
-            MCP.log("RecordingManager: ERROR - outputDirectory is nil, cannot write meta.json.")
+            AppLogger.log("RecordingManager: ERROR - outputDirectory is nil, cannot write meta.json.")
         }
 
         // Write video_timestamps.json
@@ -312,9 +315,9 @@ class RecordingManager {
             do {
                 let data = try JSONSerialization.data(withJSONObject: videoTimestampsJSON, options: .prettyPrinted)
                 try data.write(to: jsonURL)
-                MCP.log("RecordingManager: Wrote video_timestamps.json to \(jsonURL.path)")
+                AppLogger.log("RecordingManager: Wrote video_timestamps.json to \(jsonURL.path)")
             } catch {
-                MCP.log("RecordingManager: ERROR writing video_timestamps.json: \(error)")
+                AppLogger.log("RecordingManager: ERROR writing video_timestamps.json: \(error)")
             }
         }
 
@@ -324,9 +327,9 @@ class RecordingManager {
             do {
                 let data = try JSONSerialization.data(withJSONObject: cameraPoses, options: .prettyPrinted)
                 try data.write(to: poseURL)
-                MCP.log("RecordingManager: Wrote camera_poses.json to \(poseURL.path)")
+                AppLogger.log("RecordingManager: Wrote camera_poses.json to \(poseURL.path)")
             } catch {
-                MCP.log("RecordingManager: ERROR writing camera_poses.json: \(error)")
+                AppLogger.log("RecordingManager: ERROR writing camera_poses.json: \(error)")
             }
         }
 
@@ -338,12 +341,12 @@ class RecordingManager {
                     do {
                         let data = try NSKeyedArchiver.archivedData(withRootObject: worldMap, requiringSecureCoding: true)
                         try data.write(to: mapURL)
-                        MCP.log("RecordingManager: Saved world map to \(mapURL.path)")
+                        AppLogger.log("RecordingManager: Saved world map to \(mapURL.path)")
                     } catch {
-                        MCP.log("RecordingManager: ERROR saving world map: \(error)")
+                        AppLogger.log("RecordingManager: ERROR saving world map: \(error)")
                     }
                 } else if let error = error {
-                    MCP.log("RecordingManager: ERROR retrieving world map: \(error.localizedDescription)")
+                    AppLogger.log("RecordingManager: ERROR retrieving world map: \(error.localizedDescription)")
                 }
             }
 
@@ -353,29 +356,29 @@ class RecordingManager {
                 for anchor in currentMeshAnchors {
                     addMeshAnchor(anchor)
                 }
-                MCP.log("RecordingManager: Added \(currentMeshAnchors.count) final mesh anchors, total: \(meshAnchors.count)")
+                AppLogger.log("RecordingManager: Added \(currentMeshAnchors.count) final mesh anchors, total: \(meshAnchors.count)")
             }
         }
 
         guard let writer = assetWriter else {
-            MCP.log("RecordingManager: stopRecording - assetWriter is nil. No video to finish. Calling completion.")
+            AppLogger.log("RecordingManager: stopRecording - assetWriter is nil. No video to finish. Calling completion.")
             completion?()
             return
         }
         
-        MCP.log("RecordingManager: Attempting to finish writing video. AssetWriter status before finishWriting: \(writer.status.rawValue)")
+        AppLogger.log("RecordingManager: Attempting to finish writing video. AssetWriter status before finishWriting: \(writer.status.rawValue)")
         if writer.status == .failed {
-            MCP.log("RecordingManager: AssetWriter status was ALREADY FAILED. Error: \(writer.error?.localizedDescription ?? "None")")
+            AppLogger.log("RecordingManager: AssetWriter status was ALREADY FAILED. Error: \(writer.error?.localizedDescription ?? "None")")
         }
 
         writer.finishWriting { [weak self] in
-            MCP.log("RecordingManager: AVAssetWriter finishWriting completed. Final status: \(writer.status.rawValue)")
+            AppLogger.log("RecordingManager: AVAssetWriter finishWriting completed. Final status: \(writer.status.rawValue)")
             if writer.status == .failed {
-                MCP.log("RecordingManager: AVAssetWriter FAILED to write video. Error: \(writer.error?.localizedDescription ?? "Unknown error")")
+                AppLogger.log("RecordingManager: AVAssetWriter FAILED to write video. Error: \(writer.error?.localizedDescription ?? "Unknown error")")
             } else if writer.status == .completed {
-                MCP.log("RecordingManager: AVAssetWriter COMPLETED video writing successfully.")
+                AppLogger.log("RecordingManager: AVAssetWriter COMPLETED video writing successfully.")
             } else {
-                MCP.log("RecordingManager: AVAssetWriter finished with status: \(writer.status.rawValue). Error: \(writer.error?.localizedDescription ?? "None")")
+                AppLogger.log("RecordingManager: AVAssetWriter finished with status: \(writer.status.rawValue). Error: \(writer.error?.localizedDescription ?? "None")")
             }
             
             if let dir = self?.outputDirectory {
@@ -386,15 +389,15 @@ class RecordingManager {
                 let depthFilesCount = (try? FileManager.default.contentsOfDirectory(atPath: depthDir.path).count) ?? 0
                 let metaExists = FileManager.default.fileExists(atPath: dir.appendingPathComponent("meta.json").path)
                 
-                MCP.log("Validation after finishWriting: video.mov exists = \(videoExists) at \(videoURL.path), imu.bin exists = \(imuExists), depth/ count = \(depthFilesCount), meta.json exists = \(metaExists)")
+                AppLogger.log("Validation after finishWriting: video.mov exists = \(videoExists) at \(videoURL.path), imu.bin exists = \(imuExists), depth/ count = \(depthFilesCount), meta.json exists = \(metaExists)")
                 
                 if videoExists && imuExists && metaExists {
-                     MCP.log("All essential files appear present. Calling completion for upload.")
+                     AppLogger.log("All essential files appear present. Calling completion for upload.")
                 } else {
-                    MCP.log("WARNING: Not all essential files present after finishWriting. Upload might be incomplete or fail.")
+                    AppLogger.log("WARNING: Not all essential files present after finishWriting. Upload might be incomplete or fail.")
                 }
             } else {
-                MCP.log("RecordingManager: outputDirectory was nil during final validation.")
+                AppLogger.log("RecordingManager: outputDirectory was nil during final validation.")
             }
             completion?()
         }
@@ -402,7 +405,7 @@ class RecordingManager {
     
     func appendVideoFrame(_ pixelBuffer: CVPixelBuffer, at time: CMTime) {
         guard isRecording else {
-            MCP.log("appendVideoFrame: Not recording, skipping frame at time \(time.seconds)")
+            AppLogger.log("appendVideoFrame: Not recording, skipping frame at time \(time.seconds)")
             return
         }
         // Compute wall-clock timestamp
@@ -419,15 +422,15 @@ class RecordingManager {
 
         guard let input = videoInput, let adaptor = pixelBufferAdaptor else { return }
         if !input.isReadyForMoreMediaData {
-            MCP.log("appendVideoFrame: Video input not ready for more media data. Skipping frame at time \(time.seconds), but timestamp was written.")
+            AppLogger.log("appendVideoFrame: Video input not ready for more media data. Skipping frame at time \(time.seconds), but timestamp was written.")
             return
         }
         if recordingStartTime == nil {
             recordingStartTime = time
-            MCP.log("RecordingManager: First video frame, recordingStartTime set to \(time.seconds)")
+            AppLogger.log("RecordingManager: First video frame, recordingStartTime set to \(time.seconds)")
         }
         guard let start = recordingStartTime else {
-            MCP.log("RecordingManager: recordingStartTime is nil, cannot append video frame at time \(time.seconds).")
+            AppLogger.log("RecordingManager: recordingStartTime is nil, cannot append video frame at time \(time.seconds).")
             return
         }
         let relativeTime = CMTimeSubtract(time, start)
@@ -436,9 +439,9 @@ class RecordingManager {
             var reusableBuffer: CVPixelBuffer?
             let status = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &reusableBuffer)
             if status != kCVReturnSuccess {
-                 MCP.log("RecordingManager: Failed to create pixel buffer from pool. Status: \(status). Appending original buffer.")
+                 AppLogger.log("RecordingManager: Failed to create pixel buffer from pool. Status: \(status). Appending original buffer.")
                  if !adaptor.append(pixelBuffer, withPresentationTime: relativeTime) {
-                    MCP.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
+                    AppLogger.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
                  }
                  return
             }
@@ -473,12 +476,12 @@ class RecordingManager {
                      guard let srcBase = CVPixelBufferGetBaseAddress(pixelBuffer),
                            let dstBase = CVPixelBufferGetBaseAddress(reusableBuffer) else {
                         copiedSuccessfully = false;
-                        MCP.log("appendVideoFrame: Failed to get base address for single-plane copy.")
+                        AppLogger.log("appendVideoFrame: Failed to get base address for single-plane copy.")
                         CVPixelBufferUnlockBaseAddress(reusableBuffer, [])
                         CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-                        MCP.log("appendVideoFrame: Critical failure getting base addresses for single-plane copy. Appending original buffer.")
+                        AppLogger.log("appendVideoFrame: Critical failure getting base addresses for single-plane copy. Appending original buffer.")
                         if !adaptor.append(pixelBuffer, withPresentationTime: relativeTime) {
-                            MCP.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer after critical base address fail) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
+                            AppLogger.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer after critical base address fail) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
                         }
                         return
                      }
@@ -488,11 +491,11 @@ class RecordingManager {
                         memcpy(dstBase, srcBase, height * bytesPerRow)
                         copiedSuccessfully = true
                      } else {
-                        MCP.log("appendVideoFrame: Single plane has zero height or bytesPerRow.")
+                        AppLogger.log("appendVideoFrame: Single plane has zero height or bytesPerRow.")
                         copiedSuccessfully = false
                      }
                 } else {
-                    MCP.log("appendVideoFrame: Plane count mismatch (src:\(srcPlaneCount), dst:\(dstPlaneCount)) or unsupported format. Will attempt to append original buffer.")
+                    AppLogger.log("appendVideoFrame: Plane count mismatch (src:\(srcPlaneCount), dst:\(dstPlaneCount)) or unsupported format. Will attempt to append original buffer.")
                     copiedSuccessfully = false
                 }
 
@@ -501,24 +504,24 @@ class RecordingManager {
 
                 if copiedSuccessfully {
                     if !adaptor.append(reusableBuffer, withPresentationTime: relativeTime) {
-                        MCP.log("RecordingManager: ERROR - pixelBufferAdaptor.append (reusableBuffer) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
+                        AppLogger.log("RecordingManager: ERROR - pixelBufferAdaptor.append (reusableBuffer) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
                     }
                 } else {
-                    MCP.log("appendVideoFrame: memcpy failed or plane mismatch, falling back to original buffer.")
+                    AppLogger.log("appendVideoFrame: memcpy failed or plane mismatch, falling back to original buffer.")
                     if !adaptor.append(pixelBuffer, withPresentationTime: relativeTime) {
-                        MCP.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer after copy fail) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
+                        AppLogger.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer after copy fail) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
                     }
                 }
             } else {
-                MCP.log("RecordingManager: Failed to create reusableBuffer from pool (reusableBuffer is nil). Appending original buffer.")
+                AppLogger.log("RecordingManager: Failed to create reusableBuffer from pool (reusableBuffer is nil). Appending original buffer.")
                 if !adaptor.append(pixelBuffer, withPresentationTime: relativeTime) {
-                    MCP.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer after pool fail) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
+                    AppLogger.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer after pool fail) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
                 }
             }
         } else {
-            MCP.log("RecordingManager: pixelBufferPool is nil. Appending original buffer directly.")
+            AppLogger.log("RecordingManager: pixelBufferPool is nil. Appending original buffer directly.")
             if !adaptor.append(pixelBuffer, withPresentationTime: relativeTime) {
-                MCP.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer, no pool) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
+                AppLogger.log("RecordingManager: ERROR - pixelBufferAdaptor.append (original buffer, no pool) failed. Writer status: \(assetWriter?.status.rawValue ?? -1), Error: \(assetWriter?.error?.localizedDescription ?? "N/A")")
             }
         }
     }
@@ -541,10 +544,10 @@ class RecordingManager {
             let movement = simd_distance(position, lastPos)
             totalCameraMovement += movement
             if movement > 0.001 { // Only log significant movements
-                MCP.log("RecordingManager: Camera moved \(movement)m, total movement: \(totalCameraMovement)m")
+                AppLogger.log("RecordingManager: Camera moved \(movement)m, total movement: \(totalCameraMovement)m")
             }
         } else {
-            MCP.log("RecordingManager: First camera pose - position=\(position)")
+            AppLogger.log("RecordingManager: First camera pose - position=\(position)")
         }
         lastCameraPosition = position
         
@@ -585,7 +588,7 @@ class RecordingManager {
         )
         
         // Debug translation values - always log for debugging
-        MCP.log("Translation: ARKit=\(arkitTranslation)") // Fixed string interpolation
+        AppLogger.log("Translation: ARKit=\(arkitTranslation)") // Fixed string interpolation
         
         // Convert to array of rows for JSON serialization (row-major order)
         // simd_float4x4 is column-major, so we construct rows manually.
@@ -602,8 +605,7 @@ class RecordingManager {
         ]
         cameraPoses.append(["timestamp": wallClock, "matrix": matrix])
     }
-    
-    func appendDepthData(depthData: CVPixelBuffer, timestamp: TimeInterval) {
+     func appendDepthData(depthData: CVPixelBuffer, timestamp: TimeInterval) {
         guard isRecording, let dir = outputDirectory else { return }
 
         // Update depth dimensions if not already set or if they change (though they shouldn't mid-recording)
@@ -612,9 +614,9 @@ class RecordingManager {
         if self.depthWidth == 0 || self.depthHeight == 0 {
             self.depthWidth = currentDepthWidth
             self.depthHeight = currentDepthHeight
-            MCP.log("RecordingManager: Depth dimensions set during appendDepthData: \(self.depthWidth)x\(self.depthHeight)")
+            AppLogger.log("RecordingManager: Depth dimensions set during appendDepthData: \(self.depthWidth)x\(self.depthHeight)")
         } else if self.depthWidth != currentDepthWidth || self.depthHeight != currentDepthHeight {
-            MCP.log("RecordingManager: WARNING - Depth dimensions changed mid-recording. Old: \(self.depthWidth)x\(self.depthHeight), New: \(currentDepthWidth)x\(currentDepthHeight)")
+            AppLogger.log("RecordingManager: WARNING - Depth dimensions changed mid-recording. Old: \(self.depthWidth)x\(self.depthHeight), New: \(currentDepthWidth)x\(currentDepthHeight)")
             // Optionally handle this case, e.g., by stopping recording or logging an error
             // For now, we'll update to the new dimensions, but this is unusual.
             self.depthWidth = currentDepthWidth
@@ -631,13 +633,13 @@ class RecordingManager {
         }
         let fileName = String(format: "%.6f.d32", absoluteTimestamp)
         let fileURL = depthDir.appendingPathComponent(fileName)
-        MCP.log("RecordingManager: Saving depth frame with ARKit timestamp \(timestamp), wall-clock \(absoluteTimestamp) to \(fileName)")
+        AppLogger.log("RecordingManager: Saving depth frame with ARKit timestamp \(timestamp), wall-clock \(absoluteTimestamp) to \(fileName)")
 
         CVPixelBufferLockBaseAddress(depthData, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(depthData, .readOnly) }
 
         guard let baseAddress = CVPixelBufferGetBaseAddress(depthData) else {
-            MCP.log("RecordingManager: ERROR - Could not get base address of depth data for frame at timestamp \(timestamp).")
+            AppLogger.log("RecordingManager: ERROR - Could not get base address of depth data for frame at timestamp \(timestamp).")
             return
         }
 
@@ -646,7 +648,7 @@ class RecordingManager {
 
         // Ensure it's Float32 depth data as expected
         guard pixelFormat == kCVPixelFormatType_DepthFloat32 else {
-            MCP.log("RecordingManager: ERROR - Unexpected depth pixel format: \(pixelFormat). Expected kCVPixelFormatType_DepthFloat32. Skipping frame at \(timestamp).")
+            AppLogger.log("RecordingManager: ERROR - Unexpected depth pixel format: \(pixelFormat). Expected kCVPixelFormatType_DepthFloat32. Skipping frame at \(timestamp).")
             return
         }
 
@@ -654,9 +656,9 @@ class RecordingManager {
         
         do {
             try data.write(to: fileURL, options: .atomic)
-            // MCP.log("RecordingManager: Saved depth frame to \(fileURL.lastPathComponent) (Size: \(bufferSize) bytes)") // Log sparingly
+            // AppLogger.log("RecordingManager: Saved depth frame to \(fileURL.lastPathComponent) (Size: \(bufferSize) bytes)") // Log sparingly
         } catch {
-            MCP.log("RecordingManager: ERROR - Failed to write depth data for frame at timestamp \(timestamp) to \(fileURL.path): \(error)")
+            AppLogger.log("RecordingManager: ERROR - Failed to write depth data for frame at timestamp \(timestamp) to \(fileURL.path): \(error)")
         }
     }
     
@@ -682,9 +684,9 @@ class RecordingManager {
         let geometry = anchor.geometry
         if geometry.vertices.count > 0 && geometry.faces.count > 0 {
             meshAnchors.append(anchor)
-            MCP.log("RecordingManager: Added mesh anchor \(anchor.identifier) with \(geometry.vertices.count) vertices and \(geometry.faces.count) faces")
+            AppLogger.log("RecordingManager: Added mesh anchor \(anchor.identifier) with \(geometry.vertices.count) vertices and \(geometry.faces.count) faces")
         } else {
-            MCP.log("RecordingManager: Skipped empty mesh anchor \(anchor.identifier)")
+            AppLogger.log("RecordingManager: Skipped empty mesh anchor \(anchor.identifier)")
         }
     }
 
@@ -694,14 +696,14 @@ class RecordingManager {
 
     private func exportMesh(to url: URL) throws {
         guard !meshAnchors.isEmpty else {
-            MCP.log("RecordingManager: No mesh anchors to export")
+            AppLogger.log("RecordingManager: No mesh anchors to export")
             return
         }
         
         var objLines: [String] = []
         var vertexOffset: UInt32 = 0
         
-        MCP.log("RecordingManager: Starting mesh export with \(meshAnchors.count) anchors")
+        AppLogger.log("RecordingManager: Starting mesh export with \(meshAnchors.count) anchors")
         
         for (anchorIndex, anchor) in meshAnchors.enumerated() {
             let geometry = anchor.geometry
@@ -709,7 +711,7 @@ class RecordingManager {
             
             // Safety check for vertex count
             guard vertexCount > 0 else {
-                MCP.log("RecordingManager: Anchor \(anchorIndex) has no vertices, skipping")
+                AppLogger.log("RecordingManager: Anchor \(anchorIndex) has no vertices, skipping")
                 continue
             }
             
@@ -730,7 +732,7 @@ class RecordingManager {
             let indexCountPerPrimitive = faces.indexCountPerPrimitive
             
             guard faceCount > 0 && indexCountPerPrimitive == 3 else {
-                MCP.log("RecordingManager: Anchor \(anchorIndex) has \(faceCount) faces with \(indexCountPerPrimitive) indices per primitive, skipping faces")
+                AppLogger.log("RecordingManager: Anchor \(anchorIndex) has \(faceCount) faces with \(indexCountPerPrimitive) indices per primitive, skipping faces")
                 vertexOffset += UInt32(vertexCount)
                 continue
             }
@@ -759,11 +761,11 @@ class RecordingManager {
                     objLines.append("f \(i0) \(i1) \(i2)")
                 }
             } else {
-                MCP.log("RecordingManager: Unsupported index size \(faces.bytesPerIndex) bytes for anchor \(anchorIndex)")
+                AppLogger.log("RecordingManager: Unsupported index size \(faces.bytesPerIndex) bytes for anchor \(anchorIndex)")
             }
             
             vertexOffset += UInt32(vertexCount)
-            MCP.log("RecordingManager: Processed anchor \(anchorIndex): \(vertexCount) vertices, \(faceCount) faces")
+            AppLogger.log("RecordingManager: Processed anchor \(anchorIndex): \(vertexCount) vertices, \(faceCount) faces")
         }
         
         guard !objLines.isEmpty else {
@@ -772,7 +774,7 @@ class RecordingManager {
         
         let objContent = objLines.joined(separator: "\n")
         try objContent.write(to: url, atomically: true, encoding: .utf8)
-        MCP.log("RecordingManager: Successfully exported mesh with \(objLines.filter { $0.hasPrefix("v ") }.count) vertices and \(objLines.filter { $0.hasPrefix("f ") }.count) faces")
+        AppLogger.log("RecordingManager: Successfully exported mesh with \(objLines.filter { $0.hasPrefix("v ") }.count) vertices and \(objLines.filter { $0.hasPrefix("f ") }.count) faces")
     }
 
     // Helper for scan folder naming

@@ -8,7 +8,16 @@ import ARKit
 import UIKit
 import CoreMotion
 
-struct ARPreviewView: UIViewRepresentable {
+struct ARPreviewView: View {
+    @Binding var isRecording: Bool
+    
+    var body: some View {
+        ARKitLiveView(isRecording: $isRecording)
+    }
+}
+
+// MARK: - ARKit Live View (Traditional)
+struct ARKitLiveView: UIViewRepresentable {
     @Binding var isRecording: Bool
 
     class Coordinator: NSObject, ARSessionDelegate {
@@ -35,9 +44,9 @@ struct ARPreviewView: UIViewRepresentable {
         let encodeQueue = DispatchQueue(label: "com.roboclip.encode")
         let motionQueue = OperationQueue()
 
-        var parent: ARPreviewView
+        var parent: ARKitLiveView
 
-        init(parent: ARPreviewView) {
+        init(parent: ARKitLiveView) {
             self.parent = parent
             super.init()
 
@@ -114,9 +123,10 @@ struct ARPreviewView: UIViewRepresentable {
         func startRecording() {
             MCP.log("Coordinator.startRecording() called")
             recordingManager = RecordingManager()
+            
             recordingManager?.startRecording(arSession: self.session)
             isRecording = true
-            MCP.log("Recording started.")
+            MCP.log("Recording started")
         }
         
         func stopRecording() {
@@ -256,12 +266,5 @@ struct ARPreviewView: UIViewRepresentable {
     
     func updateUIView(_ uiView: ARSCNView, context: Context) {
         context.coordinator.updateRecordingState()
-    }
-} 
-
-// MARK: - MCP Logging
-final class MCP {
-    static func log(_ message: String) {
-        print("[DEBUG] " + message)
     }
 }

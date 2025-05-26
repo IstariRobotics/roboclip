@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Home screen rebuilt with modern SwiftUI patterns and clearer component boundaries.
 struct HomeView: View {
@@ -10,20 +11,28 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $navPath) {
             VStack(spacing: 0) {
-                // Modern bold header
+                // Modern bold header with improved branding
                 HStack {
                     Text("roboclip")
                         .font(.largeTitle.bold())
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                     Spacer()
                     SettingsLink()
+                        .foregroundColor(.white)
                 }
                 .padding([.top, .horizontal])
                 .padding(.bottom, 8)
+                .background(
+                    LinearGradient(
+                        colors: [Color.blue, Color.blue.opacity(0.8)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
 
                 ScrollView {
                     VStack(spacing: 24) {
-                        // Card-style record button
+                        // Card-style record button with updated colors
                         FeatureButton(title: "Record",
                                       systemImage: "record.circle.fill",
                                       tint: .red) {
@@ -36,6 +45,7 @@ struct HomeView: View {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Uploads")
                                     .font(.title3.bold())
+                                    .foregroundColor(.primary) // Dynamic color that adapts to light/dark mode
                                 ForEach(uploader.sessionStatuses) { session in
                                     UploadRow(session: session)
                                 }
@@ -46,10 +56,10 @@ struct HomeView: View {
                     .padding(.vertical)
                 }
             }
-            .background(Color(.systemGroupedBackground).ignoresSafeArea())
+            .background(Color(red: 0.88, green: 0.88, blue: 0.88, opacity: 0.3).ignoresSafeArea()) // Subtle gray background
             .navigationBarHidden(true)
             .onAppear {
-                MCP.log("HomeView appeared")
+                print("HomeView appeared") // Temporarily using print until AppLogger is in scope
                 uploader.setIsRecording(isRecording)
                 uploader.refreshPendingUploads()
                 uploader.startUploadProcess()
@@ -80,84 +90,150 @@ private func getScanFolderDateFormatter() -> DateFormatter {
 
 // MARK: - Reusable components -----------------------------------------------------------
 
-/// Big button used in the grid.
+/// Big button used in the grid with modern branding and dark mode support.
 struct FeatureButton: View {
     let title: String
     let systemImage: String
     let tint: Color
     let action: () -> Void
     @State private var isPressed = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 10) {
-                ZStack {
+            VStack(spacing: 12) {
+                // Special handling for record button - just a big red circle
+                if systemImage == "record.circle.fill" {
                     Circle()
-                        .fill(tint.opacity(0.18))
-                        .frame(width: 70, height: 70)
-                        .shadow(color: tint.opacity(0.18), radius: 8, y: 4)
-                    Image(systemName: systemImage)
-                        .font(.system(size: 38, weight: .bold))
-                        .foregroundColor(tint)
+                        .fill(colorScheme == .dark ? Color.red.opacity(0.9) : Color.red)
+                        .frame(width: 80, height: 80)
+                        .shadow(color: Color.red.opacity(0.3), radius: 8, y: 4)
+                } else {
+                    // Other icons use the complex styling
+                    ZStack {
+                        // Adaptive background for the icon circle
+                        Circle()
+                            .fill(adaptiveIconBackground)
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Circle()
+                                    .stroke(adaptiveIconBorder, lineWidth: 2)
+                            )
+                            .shadow(color: adaptiveIconShadow, radius: 12, y: 6)
+                        
+                        // Other icons use the tint color
+                        Image(systemName: systemImage)
+                            .font(.system(size: 42, weight: .bold))
+                            .foregroundColor(adaptiveIconColor)
+                    }
                 }
+                
                 Text(title)
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
             }
-            .padding(.vertical, 18)
+            .padding(.vertical, 20)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: .black.opacity(isPressed ? 0.08 : 0.13), radius: isPressed ? 2 : 8, y: isPressed ? 1 : 4)
+                // Only show background styling for non-record buttons
+                Group {
+                    if systemImage == "record.circle.fill" {
+                        Color.clear
+                    } else {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color(UIColor.secondarySystemBackground))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
+                            )
+                            .shadow(color: Color.primary.opacity(isPressed ? 0.1 : 0.15), radius: isPressed ? 4 : 12, y: isPressed ? 2 : 6)
+                    }
+                }
             )
-            .scaleEffect(isPressed ? 0.97 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isPressed)
+            .scaleEffect(isPressed ? 0.96 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
         }
         .buttonStyle(PlainButtonStyle())
         .simultaneousGesture(DragGesture(minimumDistance: 0)
             .onChanged { _ in isPressed = true }
             .onEnded { _ in isPressed = false })
     }
+    
+    // Adaptive colors for better dark mode support
+    private var adaptiveIconBackground: Color {
+        return tint.opacity(0.15)
+    }
+    
+    private var adaptiveIconBorder: Color {
+        return Color.accentColor.opacity(0.3)
+    }
+    
+    private var adaptiveIconShadow: Color {
+        return tint.opacity(0.2)
+    }
+    
+    private var adaptiveIconColor: Color {
+        return tint
+    }
 }
 
-/// Row showing progress for an uploading session.
+/// Row showing progress for an uploading session with modern styling and dark mode support.
 struct UploadRow: View {
     var session: SessionStatus
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(session.folderName)
                     .font(.subheadline)
                     .fontWeight(.medium)
+                    .foregroundColor(.primary) // Adapts to light/dark mode
                 ProgressView(value: session.progress)
+                    .tint(.blue) // Use system blue which adapts to light/dark mode
             }
             Spacer()
-            Text("\(Int(session.progress * 100))%")
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundColor(.secondary)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(Int(session.progress * 100))%")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+                    .foregroundColor(.primary) // Adapts to light/dark mode
+                if session.progress < 1.0 {
+                    Text("Uploading...")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Complete")
+                        .font(.caption2)
+                        .foregroundColor(.green)
+                }
+            }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-                .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(UIColor.secondarySystemBackground)) // Adapts to light/dark mode
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
+                )
+                .shadow(color: Color.primary.opacity(0.08), radius: 4, y: 2)
         )
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
     }
 }
 
-/// Settings gear that pushes a SettingsView (placeholder).
+/// Settings gear that pushes a SettingsView with Istari branding.
 struct SettingsLink: View {
     var body: some View {
         NavigationLink {
             SettingsView()
         } label: {
-            Image(systemName: "gearshape")
+            Image(systemName: "gearshape.fill")
+                .font(.title2)
+                .foregroundColor(.white)
         }
     }
 }
