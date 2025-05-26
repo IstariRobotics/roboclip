@@ -81,55 +81,17 @@ def extract_video_timestamps_from_video_file(video_path):
     cap.release()
     return timestamps
 
-def generate_video_frames(video_path, target_width=640, target_height=480, quality_scale=0.7):
-    """Yields RGB frames from video.mov using OpenCV, one by one with optional compression."""
+def generate_video_frames(video_path):
+    """Yields RGB frames from video.mov using OpenCV, one by one."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         print(f"Error: Could not open video file {video_path} for frame generation.")
         return # Stop iteration (generator will be empty)
 
-    # Get original video dimensions
-    orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    # Calculate target dimensions while maintaining aspect ratio
-    if orig_width > 0 and orig_height > 0:
-        aspect_ratio = orig_width / orig_height
-        if aspect_ratio > (target_width / target_height):
-            # Video is wider, fit to width
-            new_width = target_width
-            new_height = int(target_width / aspect_ratio)
-        else:
-            # Video is taller, fit to height
-            new_height = target_height
-            new_width = int(target_height * aspect_ratio)
-        
-        # Ensure dimensions are even (required for some video codecs)
-        new_width = new_width if new_width % 2 == 0 else new_width - 1
-        new_height = new_height if new_height % 2 == 0 else new_height - 1
-        
-        use_compression = (new_width < orig_width) or (new_height < orig_height)
-        if use_compression:
-            print(f"Video compression enabled: {orig_width}x{orig_height} -> {new_width}x{new_height} (quality: {quality_scale})")
-    else:
-        use_compression = False
-        new_width, new_height = orig_width, orig_height
-
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # Apply compression if needed
-        if use_compression:
-            # Resize frame
-            frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
-            
-            # Apply quality scaling by JPEG compression
-            if quality_scale < 1.0:
-                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), int(quality_scale * 100)]
-                _, buffer = cv2.imencode('.jpg', frame, encode_param)
-                frame = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
         
         # Convert BGR to RGB
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -561,15 +523,10 @@ def visualize_single_session_in_rerun(session_id, session_imu_events, session_me
             estimated_video_fps = (len(video_timestamps_list) - 1) / video_duration if video_duration > 0 else 30.0
             depth_frame_skip_interval = max(1, int(estimated_video_fps / target_depth_fps))
             print(f"Estimated video FPS: {estimated_video_fps:.1f}, depth will be logged every {depth_frame_skip_interval} frames ({target_depth_fps}fps)")
-        # Create video frame generator with compression
+        # Create video frame generator
         video_mov_path = DATA_DIR / session_id / "video.mov"
         if video_mov_path.exists():
-            video_frame_generator = generate_video_frames(
-                video_mov_path, 
-                target_width=1280,  # Compressed width (down from 1920)
-                target_height=720,  # Compressed height (down from 1080) 
-                quality_scale=0.8   # 80% quality for good balance of size/quality
-            )
+            video_frame_generator = generate_video_frames(video_mov_path)
         print(f"Using video as primary source: {num_frames_to_log} frames")
     elif scanned_depth_info_list:
         source_type = "depth"
