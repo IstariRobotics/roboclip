@@ -114,7 +114,6 @@ struct HomeView: View {
                                     LazyVStack(spacing: 12) {
                                         ForEach(uploader.sessionStatuses) { session in
                                             UploadRow(session: session)
-                                                .modernCard()
                                         }
                                     }
                                 }
@@ -248,50 +247,73 @@ struct FeatureButton: View {
     }
 }
 
-/// Row showing progress for an uploading session with modern styling and dark mode support.
+/// Row showing progress for an uploading session with modern glass morphism styling.
 struct UploadRow: View {
     var session: SessionStatus
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(session.folderName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary) // Adapts to light/dark mode
-                ProgressView(value: session.progress)
-                    .tint(.blue) // Use system blue which adapts to light/dark mode
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                
+                // Custom progress bar with glass morphism
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        // Background track
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(ColorPalette.glassBackground.opacity(0.3))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(ColorPalette.glassBorder.opacity(0.5), lineWidth: 0.5)
+                            }
+                            .frame(height: 6)
+                        
+                        // Progress fill with gradient
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                LinearGradient(
+                                    colors: session.progress < 1.0 ? 
+                                        [ColorPalette.neonBlue, ColorPalette.neonPurple] :
+                                        [ColorPalette.successGreen, ColorPalette.neonGreen],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: geometry.size.width * session.progress, height: 6)
+                            .animation(.easeInOut(duration: 0.3), value: session.progress)
+                    }
+                }
+                .frame(height: 6)
             }
+            
             Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
+            
+            VStack(alignment: .trailing, spacing: 4) {
                 Text("\(Int(session.progress * 100))%")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .monospacedDigit()
-                    .foregroundColor(.primary) // Adapts to light/dark mode
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundColor(.white)
+                
                 if session.progress < 1.0 {
-                    Text("Uploading...")
+                    Text("uploading")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.white.opacity(0.6))
                 } else {
-                    Text("Complete")
+                    Text("complete")
                         .font(.caption2)
-                        .foregroundColor(.green)
+                        .foregroundColor(ColorPalette.successGreen)
                 }
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 16)
         .padding(.horizontal, 16)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(UIColor.secondarySystemBackground)) // Adapts to light/dark mode
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
-                )
-                .shadow(color: Color.primary.opacity(0.08), radius: 4, y: 2)
-        )
-        .padding(.vertical, 3)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(ColorPalette.glassBackground)
+                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+        }
     }
 }
 
