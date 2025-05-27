@@ -10,53 +10,123 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack(path: $navPath) {
-            VStack(spacing: 0) {
-                // Modern bold header with improved branding
-                HStack {
-                    Text("roboclip")
-                        .font(.largeTitle.bold())
-                        .foregroundColor(.white)
-                    Spacer()
-                    SettingsLink()
-                        .foregroundColor(.white)
-                }
-                .padding([.top, .horizontal])
-                .padding(.bottom, 8)
-                .background(
-                    LinearGradient(
-                        colors: [Color.blue, Color.blue.opacity(0.8)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // Card-style record button with updated colors
-                        FeatureButton(title: "Record",
-                                      systemImage: "record.circle.fill",
-                                      tint: .red) {
-                            navPath.append(Destination.record)
+            ZStack {
+                // Animated background gradient
+                ColorPalette.spaceGradient
+                    .ignoresSafeArea()
+                    .animatedBackground()
+                
+                VStack(spacing: 0) {
+                    // Modern header with glass morphism
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("roboclip")
+                                .font(.largeTitle.bold())
+                                .foregroundColor(.white)
+                            
+                            Text("AR Reality Capture")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.7))
                         }
-                        .padding(.horizontal)
+                        
+                        Spacer()
+                        
+                        SettingsLink()
+                            .foregroundColor(.white)
+                            .font(.title2)
+                            .frame(width: 44, height: 44)
+                            .background {
+                                Circle()
+                                    .fill(ColorPalette.glassBackground)
+                                    .overlay {
+                                        Circle()
+                                            .stroke(ColorPalette.glassBorder, lineWidth: 1)
+                                    }
+                            }
+                    }
+                    .padding()
+                    .glassMorphism()
+                    .padding(.horizontal)
+                    .padding(.top, 8)
 
-                        // Uploads section
-                        if !uploader.sessionStatuses.isEmpty {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Uploads")
-                                    .font(.title3.bold())
-                                    .foregroundColor(.primary) // Dynamic color that adapts to light/dark mode
-                                ForEach(uploader.sessionStatuses) { session in
-                                    UploadRow(session: session)
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            // Hero record button with modern styling
+                            VStack(spacing: 16) {
+                                Button {
+                                    navPath.append(Destination.record)
+                                } label: {
+                                    VStack(spacing: 12) {
+                                        Image(systemName: "video.circle.fill")
+                                            .font(.system(size: 60))
+                                            .foregroundStyle(ColorPalette.recordGradient)
+                                            .neonGlow(color: ColorPalette.errorRed, radius: 15)
+                                        
+                                        Text("Start Recording")
+                                            .font(.title2.bold())
+                                            .foregroundColor(.white)
+                                        
+                                        Text("Capture AR depth and IMU data")
+                                            .font(.caption)
+                                            .foregroundColor(.white.opacity(0.7))
+                                            .multilineTextAlignment(.center)
+                                    }
+                                    .padding(24)
+                                    .frame(maxWidth: .infinity)
                                 }
+                                .modernCard()
+                                .scaleEffect(1.0)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: false)
                             }
                             .padding(.horizontal)
+                            .padding(.top, 24)
+
+                            // Uploads section with modern styling
+                            if !uploader.sessionStatuses.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    HStack {
+                                        Image(systemName: "icloud.and.arrow.up")
+                                            .font(.title3)
+                                            .foregroundColor(ColorPalette.neonBlue)
+                                            .neonGlow(color: ColorPalette.neonBlue, radius: 5)
+                                        
+                                        Text("Uploads")
+                                            .font(.title3.bold())
+                                            .foregroundColor(.white)
+                                        
+                                        Spacer()
+                                        
+                                        Text("\(uploader.sessionStatuses.count)")
+                                            .font(.caption.bold())
+                                            .foregroundColor(.white.opacity(0.7))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background {
+                                                Capsule()
+                                                    .fill(ColorPalette.glassBackground)
+                                                    .overlay {
+                                                        Capsule()
+                                                            .stroke(ColorPalette.glassBorder, lineWidth: 1)
+                                                    }
+                                            }
+                                    }
+                                    
+                                    LazyVStack(spacing: 12) {
+                                        ForEach(uploader.sessionStatuses) { session in
+                                            UploadRow(session: session)
+                                                .modernCard()
+                                        }
+                                    }
+                                }
+                                .padding()
+                                .glassMorphism()
+                                .padding(.horizontal)
+                            }
                         }
+                        .padding(.vertical)
                     }
-                    .padding(.vertical)
                 }
             }
-            .background(Color(red: 0.88, green: 0.88, blue: 0.88, opacity: 0.3).ignoresSafeArea()) // Subtle gray background
             .navigationBarHidden(true)
             .onAppear {
                 print("HomeView appeared") // Temporarily using print until AppLogger is in scope
